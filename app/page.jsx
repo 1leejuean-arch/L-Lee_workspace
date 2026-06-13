@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { parseCalendarRequest } from "../lib/aiCalendarParser";
 import {
   Bell,
   Bot,
@@ -855,30 +856,135 @@ function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
   );
 }
 
-function AssistantView({ assistantInput, setAssistantInput }) {
+function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCreated }) {
+  const [chatMessages, setChatMessages] = useState(aiMessages);
+  const [pendingEvent, setPendingEvent] = useState(null);
+  const [assistantStatus, setAssistantStatus] = useState("idle");
+
+  function addChatMessage(role, text) {
+    setChatMessages((messages) => [...messages, { id: Date.now() + Math.random(), role, text }]);
+  }
+
+  function handleAssistantSubmit(event) {
+    event.preventDefault();
+    const input = assistantInput.trim();
+    if (!input) return;
+
+    addChatMessage("user", input);
+    setAssistantInput("");
+
+    if (status !== "authenticated") {
+      setPendingEvent(null);
+      addChatMessage("assistant", "Google 계정을 연결하면 AI 비서가 일정을 추가할 수 있어요.");
+      return;
+    }
+
+    const parsedEvent = parseCalendarRequest(input);
+    if (!parsedEvent) {
+      setPendingEvent(null);
+      addChatMessage("assistant", "아직은 일정 추가 요청만 이해할 수 있어요. 예: 내일 오후 6시에 회의 예약해줘");
+      return;
+    }
+
+    setPendingEvent(parsedEvent);
+    addChatMessage(
+      "assistant",
+      `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
+    );
+  }
+
+  async function confirmCalendarEvent() {
+    if (!pendingEvent) return;
+    setAssistantStatus("loading");
+
+    try {
+      const response = await fetch("/api/calendar/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: pendingEvent.title,
+          date: pendingEvent.date,
+          startTime: pendingEvent.startTime,
+          endTime: pendingEvent.endTime,
+          description: pendingEvent.description,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "일정 추가에 실패했습니다.");
+      }
+
+      addChatMessage("assistant", data.message || "일정이 Google Calendar에 추가되었습니다.");
+      setPendingEvent(null);
+      await onCalendarCreated();
+    } catch (error) {
+      addChatMessage("assistant", error.message || "일정 추가 중 오류가 발생했습니다.");
+    } finally {
+      setAssistantStatus("idle");
+    }
+  }
+
+  function cancelCalendarEvent() {
+    setPendingEvent(null);
+    addChatMessage("assistant", "일정 추가를 취소했어요.");
+  }
+
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-8">
         <CardHeader icon={MessageSquare} title="워크스페이스 채팅" action={false} />
         <div className="space-y-4 p-5">
-          {aiMessages.map((message) => (
+          {chatMessages.map((message) => (
             <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-lg border px-4 py-3 text-sm leading-6 ${message.role === "user" ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-50" : "border-white/10 bg-slate-950/45 text-slate-300"}`}>
                 {message.text}
               </div>
             </div>
           ))}
-          <div className="flex gap-2 border-t border-white/10 pt-4">
+          {pendingEvent && (
+            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+              <p className="text-sm font-semibold text-white">일정 추가 확인</p>
+              <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                <p>제목: {pendingEvent.title}</p>
+                <p>날짜: {pendingEvent.displayDate}</p>
+                <p>시작: {pendingEvent.startTime}</p>
+                <p>종료: {pendingEvent.endTime}</p>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">{pendingEvent.originalText}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={confirmCalendarEvent}
+                  disabled={assistantStatus === "loading"}
+                  className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {assistantStatus === "loading" ? "추가 중..." : "확인"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelCalendarEvent}
+                  disabled={assistantStatus === "loading"}
+                  className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+          <form onSubmit={handleAssistantSubmit} className="flex gap-2 border-t border-white/10 pt-4">
             <input
               value={assistantInput}
               onChange={(event) => setAssistantInput(event.target.value)}
               placeholder="예: 내일 오후 6시에 회의 예약해줘"
               className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
             />
-            <button type="button" className="rounded-lg bg-cyan-300 px-4 text-slate-950 transition hover:bg-cyan-200">
+            <button type="submit" className="rounded-lg bg-cyan-300 px-4 text-slate-950 transition hover:bg-cyan-200">
               <Send className="h-4 w-4" />
             </button>
-          </div>
+          </form>
         </div>
       </GlassCard>
       <GlassCard className="xl:col-span-4">
@@ -1155,7 +1261,14 @@ export default function Home() {
         completedCount={completedCount}
       />
     ),
-    "AI Assistant": <AssistantView assistantInput={assistantInput} setAssistantInput={setAssistantInput} />,
+    "AI Assistant": (
+      <AssistantView
+        assistantInput={assistantInput}
+        setAssistantInput={setAssistantInput}
+        status={status}
+        onCalendarCreated={() => loadCalendarEvents()}
+      />
+    ),
     Settings: <SettingsView session={session} status={status} />,
   };
 
