@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { parseCalendarRequest } from "../lib/aiCalendarParser";
 import {
   Bell,
   Bot,
@@ -931,7 +930,7 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
     setChatMessages((messages) => [...messages, { id: Date.now() + Math.random(), role, text }]);
   }
 
-  function handleAssistantSubmit(event) {
+  async function handleAssistantSubmit(event) {
     event.preventDefault();
     const input = assistantInput.trim();
     if (!input) return;
@@ -945,18 +944,38 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
       return;
     }
 
-    const parsedEvent = parseCalendarRequest(input);
-    if (!parsedEvent) {
-      setPendingEvent(null);
-      addChatMessage("assistant", "아직은 일정 추가 요청만 이해할 수 있어요. 예: 내일 오후 6시에 회의 예약해줘");
-      return;
-    }
+    setAssistantStatus("loading");
 
-    setPendingEvent(parsedEvent);
-    addChatMessage(
-      "assistant",
-      `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
-    );
+    try {
+      const response = await fetch("/api/assistant/parse", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input }),
+      });
+      const parsedEvent = await response.json();
+
+      if (!response.ok || parsedEvent.intent !== "create_calendar_event") {
+        setPendingEvent(null);
+        addChatMessage(
+          "assistant",
+          parsedEvent.message || "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요.",
+        );
+        return;
+      }
+
+      setPendingEvent(parsedEvent);
+      addChatMessage(
+        "assistant",
+        `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
+      );
+    } catch (error) {
+      setPendingEvent(null);
+      addChatMessage("assistant", "일정 요청을 분석하지 못했어요. 예: 내일 오후 6시에 회의 예약해줘");
+    } finally {
+      setAssistantStatus("idle");
+    }
   }
 
   async function confirmCalendarEvent() {
