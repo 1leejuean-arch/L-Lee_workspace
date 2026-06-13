@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>L-Lee Workspace</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Gradient Animation */
+    @keyframes gradientMove {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .animate-gradient {
+      background-size: 200% 200%;
+      animation: gradientMove 3s ease infinite;
+    }
+
+    /* Glass Card Base Styles */
+    .glass-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 1.5rem;
+      background-color: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(40px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      transition: all 0.3s ease;
+    }
+    .glass-card:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+      box-shadow: 0 10px 40px -10px rgba(139, 92, 246, 0.1);
+      transform: translateY(-4px);
+    }
+    .glass-card .glow-effect {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom right, rgba(255,255,255,0.02), transparent);
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      pointer-events: none;
+    }
+    .glass-card:hover .glow-effect {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="flex h-screen w-full bg-[#070b14] text-slate-300 overflow-hidden selection:bg-violet-500/30 relative">
+
+  <!-- Ambient Background Glows -->
+  <div class="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/10 blur-[150px] pointer-events-none z-0"></div>
+  <div class="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-cyan-600/10 blur-[150px] pointer-events-none z-0"></div>
+
+  <!-- --- Sidebar --- -->
+  <aside class="hidden md:flex flex-col w-64 border-r border-white/10 bg-[#0a0f1c]/50 backdrop-blur-xl z-10">
+    <div class="h-20 flex items-center px-8 border-b border-white/5">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-violet-500/20">
+          <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
+        </div>
+        <span class="font-bold text-lg text-white tracking-wide">L-Lee OS</span>
+      </div>
+    </div>
+
+    <nav class="flex-1 py-8 px-4 space-y-2 overflow-y-auto custom-scrollbar">
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 bg-white/10 text-white shadow-sm border border-white/5">
+        <i data-lucide="layout-dashboard" class="w-5 h-5 text-violet-400"></i>
+        <span class="font-medium">Dashboard</span>
+      </button>
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 text-slate-400 hover:bg-white/5 hover:text-slate-200">
+        <i data-lucide="calendar" class="w-5 h-5"></i>
+        <span class="font-medium">Calendar</span>
+      </button>
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 text-slate-400 hover:bg-white/5 hover:text-slate-200">
+        <i data-lucide="hard-drive" class="w-5 h-5"></i>
+        <span class="font-medium">Drive</span>
+      </button>
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 text-slate-400 hover:bg-white/5 hover:text-slate-200">
+        <i data-lucide="file-text" class="w-5 h-5"></i>
+        <span class="font-medium">Notes</span>
+      </button>
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 text-slate-400 hover:bg-white/5 hover:text-slate-200">
+        <i data-lucide="check-square" class="w-5 h-5"></i>
+        <span class="font-medium">Tasks</span>
+      </button>
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 text-slate-400 hover:bg-white/5 hover:text-slate-200">
+        <i data-lucide="sparkles" class="w-5 h-5"></i>
+        <span class="font-medium">AI Assistant</span>
+      </button>
+    </nav>
+
+    <div class="p-4">
+      <button class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-all duration-200">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+        <span class="font-medium">Settings</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- --- Main Content --- -->
+  <main class="flex-1 flex flex-col h-full relative z-10 overflow-hidden">
+    <!-- Header -->
+    <header class="h-20 flex items-center justify-between px-8 bg-transparent border-b border-white/5 shrink-0">
+      <div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">Good evening, Juean</h1>
+        <p id="current-date" class="text-sm text-slate-400 mt-1">Loading date...</p>
+      </div>
+
+      <div class="flex items-center gap-6">
+        <div class="relative group hidden lg:block">
+          <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <i data-lucide="search" class="h-4 w-4 text-slate-400 group-focus-within:text-violet-400 transition-colors"></i>
+          </div>
+          <input
+            type="text"
+            placeholder="Search notes, files, events..."
+            class="w-72 bg-white/5 border border-white/10 rounded-full py-2.5 pl-11 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 focus:bg-white/10 transition-all"
+          />
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button class="relative p-2.5 rounded-full text-slate-400 hover:bg-white/10 hover:text-white transition-all border border-transparent hover:border-white/10">
+            <i data-lucide="bell" class="w-5 h-5"></i>
+            <span class="absolute top-2 right-2.5 w-2 h-2 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)]"></span>
+          </button>
+          <button class="w-10 h-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-white/10 flex items-center justify-center hover:ring-2 ring-violet-500/50 transition-all overflow-hidden">
+             <i data-lucide="user" class="w-5 h-5 text-slate-300"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Dashboard Grid Scrollable Area -->
+    <div class="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 auto-rows-max">
+        
+        <!-- 1. Today's Agenda (Google Calendar) -->
+        <div class="glass-card xl:col-span-1 xl:row-span-2">
+          <div class="glow-effect"></div>
+          <div class="flex items-center justify-between p-6 pb-4 border-b border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <i data-lucide="calendar" class="w-5 h-5 text-violet-400"></i>
+              <h3 class="font-semibold text-slate-100 tracking-wide">Today's Agenda</h3>
+            </div>
+            <button class="text-slate-400 hover:text-slate-200 transition-colors">
+              <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="p-6">
+            <div id="agenda-container" class="space-y-4">
+              <!-- Rendered via JS -->
+            </div>
+            <button class="w-full mt-6 py-2.5 rounded-xl border border-white/10 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2">
+              <i data-lucide="plus" class="w-4 h-4"></i> Add Event
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Mini Calendar -->
+        <div class="glass-card xl:col-span-1">
+          <div class="glow-effect"></div>
+          <div class="flex items-center justify-between p-6 pb-4 border-b border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <h3 class="font-semibold text-slate-100 tracking-wide">October 2026</h3>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-7 gap-1 text-center mb-2">
+              <div class="text-xs font-medium text-slate-500 py-1">S</div>
+              <div class="text-xs font-medium text-slate-500 py-1">M</div>
+              <div class="text-xs font-medium text-slate-500 py-1">T</div>
+              <div class="text-xs font-medium text-slate-500 py-1">W</div>
+              <div class="text-xs font-medium text-slate-500 py-1">T</div>
+              <div class="text-xs font-medium text-slate-500 py-1">F</div>
+              <div class="text-xs font-medium text-slate-500 py-1">S</div>
+            </div>
+            <div id="calendar-days" class="grid grid-cols-7 gap-1 text-center">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Recent Files (Google Drive) -->
+        <div class="glass-card xl:col-span-1 xl:row-span-2">
+          <div class="glow-effect"></div>
+          <div class="flex items-center justify-between p-6 pb-4 border-b border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <i data-lucide="hard-drive" class="w-5 h-5 text-violet-400"></i>
+              <h3 class="font-semibold text-slate-100 tracking-wide">Recent Files</h3>
+            </div>
+            <button class="text-slate-400 hover:text-slate-200 transition-colors">
+              <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="p-6">
+            <div id="drive-files-container" class="space-y-3">
+               <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Today's Tasks -->
+        <div class="glass-card xl:col-span-1 xl:row-span-2">
+          <div class="glow-effect"></div>
+          <div class="flex items-center justify-between p-6 pb-4 border-b border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <i data-lucide="check-square" class="w-5 h-5 text-violet-400"></i>
+              <h3 class="font-semibold text-slate-100 tracking-wide">Today's Tasks</h3>
+            </div>
+            <button class="text-slate-400 hover:text-slate-200 transition-colors">
+              <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="p-6">
+            <div id="tasks-container" class="space-y-3">
+              <!-- Rendered via JS -->
+            </div>
+            <div class="mt-4 pt-4 border-t border-white/5">
+              <input 
+                type="text" 
+                placeholder="Add a new task..." 
+                class="w-full bg-transparent text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Productivity Summary -->
+        <div class="glass-card xl:col-span-1 flex flex-col justify-center">
+          <div class="glow-effect"></div>
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-slate-100 text-sm">Productivity</h3>
+              <span class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-400/10 rounded-full">On Track</span>
+            </div>
+            <div class="grid grid-cols-3 gap-4 divide-x divide-white/10">
+              <div class="text-center">
+                <div class="text-2xl font-bold text-white mb-1" id="sum-completed">18</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider">Done</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-white mb-1" id="sum-events">5</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider">Events</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-white mb-1" id="sum-files">12</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider">Files</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. AI Assistant Input -->
+        <div class="xl:col-span-2 relative group rounded-3xl p-[1px] overflow-hidden">
+           <!-- Animated Gradient Border -->
+           <div class="absolute inset-0 bg-gradient-to-r from-violet-600 via-cyan-500 to-violet-600 opacity-50 group-hover:opacity-100 transition-opacity duration-500 animate-gradient"></div>
+           
+           <div class="relative h-full bg-[#0d1323] rounded-3xl p-6 flex flex-col justify-between z-10">
+             <div class="flex items-center gap-3 mb-4">
+               <div class="p-2 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-400">
+                 <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+               </div>
+               <h3 class="font-semibold text-white">L-Lee AI Assistant</h3>
+             </div>
+             
+             <div class="relative">
+               <input
+                 type="text"
+                 placeholder="What do you want to organize today?"
+                 class="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-4 pr-12 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all text-sm"
+               />
+               <button class="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-white/10 text-slate-300 hover:bg-violet-500 hover:text-white transition-all">
+                 <i data-lucide="send" class="w-4 h-4"></i>
+               </button>
+             </div>
+
+             <div class="flex gap-2 mt-4 overflow-x-auto custom-scrollbar pb-1" id="ai-suggestions">
+               <!-- Rendered via JS -->
+             </div>
+           </div>
+        </div>
+
+        <!-- 7. Quick Notes -->
+        <div class="glass-card xl:col-span-1 2xl:col-span-1">
+          <div class="glow-effect"></div>
+          <div class="flex items-center justify-between p-6 pb-4 border-b border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <i data-lucide="file-text" class="w-5 h-5 text-violet-400"></i>
+              <h3 class="font-semibold text-slate-100 tracking-wide">Quick Notes</h3>
+            </div>
+            <button class="text-slate-400 hover:text-slate-200 transition-colors">
+              <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="p-6">
+             <textarea 
+               placeholder="Type a quick idea here..."
+               class="w-full h-32 bg-transparent text-sm text-slate-200 placeholder-slate-600 focus:outline-none resize-none custom-scrollbar"
+             >Idea for new feature: AI-based project summaries...&#10;&#10;Remember to check the deployment logs before 5 PM.</textarea>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // --- Mock Data ---
+    const MOCK_AGENDA = [
+      { id: 1, title: "Team Sync", time: "10:00 AM", duration: "1h", color: "bg-blue-500" },
+      { id: 2, title: "Design Review", time: "1:30 PM", duration: "45m", color: "bg-violet-500" },
+      { id: 3, title: "Client Call", time: "3:00 PM", duration: "1h", color: "bg-cyan-500" },
+      { id: 4, title: "Deep Work: Coding", time: "4:30 PM", duration: "2h", color: "bg-indigo-500" },
+    ];
+
+    const MOCK_DRIVE_FILES = [
+      { id: 1, name: "Q4 Project Proposal.pdf", type: "pdf", time: "10 mins ago" },
+      { id: 2, name: "Workspace UI Assets.fig", type: "design", time: "1 hour ago" },
+      { id: 3, name: "Budget_2024.xlsx", type: "sheet", time: "2 hours ago" },
+      { id: 4, name: "Weekly Meeting Notes", type: "doc", time: "Yesterday" },
+    ];
+
+    let tasks = [
+      { id: 1, title: "Review pull request #34", completed: false },
+      { id: 2, title: "Update design system components", completed: true },
+      { id: 3, title: "Reply to Sarah's email", completed: false },
+      { id: 4, title: "Prepare launch deck", completed: false },
+    ];
+
+    const MOCK_SUMMARY = {
+      completedTasks: 18,
+      upcomingEvents: 5,
+      recentFiles: 12,
+    };
+
+    const AI_SUGGESTIONS = [
+      "Draft an email", "Summarize today's meetings", "Organize Drive files", "Create new task list"
+    ];
+
+    // --- Rendering Functions ---
+
+    function setDate() {
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-US', options);
+    }
+
+    function renderAgenda() {
+      const container = document.getElementById('agenda-container');
+      container.innerHTML = MOCK_AGENDA.map(item => {
+        const timeParts = item.time.split(' ');
+        return `
+          <div class="group/item flex items-stretch gap-4 p-3 rounded-2xl hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/5">
+            <div class="flex flex-col justify-center items-center w-12 shrink-0">
+              <span class="text-xs text-slate-400 font-medium">${timeParts[0]}</span>
+              <span class="text-[10px] text-slate-500">${timeParts[1]}</span>
+            </div>
+            <div class="w-1 rounded-full ${item.color} opacity-80 group-hover/item:opacity-100 transition-opacity"></div>
+            <div class="flex-1 py-1">
+              <h4 class="text-sm font-medium text-slate-200 group-hover/item:text-white transition-colors">${item.title}</h4>
+              <div class="flex items-center gap-2 mt-1">
+                <i data-lucide="video" class="w-3 h-3 text-slate-500"></i>
+                <span class="text-xs text-slate-500">${item.duration}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderCalendar() {
+      const container = document.getElementById('calendar-days');
+      let html = '';
+      for(let i=1; i<=31; i++) {
+        const isToday = i === 26; // Mocking today's date visually
+        const hasEvent = [12, 15, 26, 28].includes(i);
+        const baseClass = isToday 
+          ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/30' 
+          : 'text-slate-300 hover:bg-white/10';
+        
+        html += `
+          <div class="relative flex items-center justify-center w-8 h-8 mx-auto rounded-full text-sm transition-all cursor-pointer ${baseClass}">
+            ${i}
+            ${hasEvent && !isToday ? '<span class="absolute bottom-1 w-1 h-1 rounded-full bg-cyan-400"></span>' : ''}
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    function renderDriveFiles() {
+      const container = document.getElementById('drive-files-container');
+      container.innerHTML = MOCK_DRIVE_FILES.map(file => {
+        let iconName = 'file';
+        let colorClass = "text-slate-400 bg-slate-800";
+        if (file.type === 'pdf') { iconName = 'file-text'; colorClass = "text-red-400 bg-red-400/10"; }
+        if (file.type === 'design') { iconName = 'sparkles'; colorClass = "text-purple-400 bg-purple-400/10"; }
+        if (file.type === 'sheet') { iconName = 'file-spreadsheet'; colorClass = "text-green-400 bg-green-400/10"; }
+
+        return `
+          <div class="flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer border border-transparent hover:border-white/5">
+            <div class="p-2.5 rounded-xl ${colorClass}">
+              <i data-lucide="${iconName}" class="w-5 h-5"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-slate-200 truncate">${file.name}</p>
+              <p class="text-xs text-slate-500 mt-0.5">${file.time}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Global function so it can be called from onclick attribute
+    window.toggleTask = function(id) {
+      const taskIndex = tasks.findIndex(t => t.id === id);
+      if(taskIndex > -1) {
+        tasks[taskIndex].completed = !tasks[taskIndex].completed;
+        renderTasks();
+      }
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('tasks-container');
+      container.innerHTML = tasks.map(task => `
+        <div onclick="toggleTask(${task.id})" class="flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer">
+          <div class="w-5 h-5 rounded flex items-center justify-center transition-all ${
+            task.completed 
+              ? 'bg-violet-500 border-violet-500 shadow-lg shadow-violet-500/30' 
+              : 'border-2 border-slate-600 bg-transparent'
+          }">
+            ${task.completed ? '<i data-lucide="check" class="w-3.5 h-3.5 text-white stroke-[3]"></i>' : ''}
+          </div>
+          <span class="text-sm transition-all duration-300 ${
+            task.completed ? 'text-slate-500 line-through' : 'text-slate-200'
+          }">
+            ${task.title}
+          </span>
+        </div>
+      `).join('');
+      lucide.createIcons(); // Re-initialize icons for newly added HTML
+    }
+
+    function renderAiSuggestions() {
+      const container = document.getElementById('ai-suggestions');
+      container.innerHTML = AI_SUGGESTIONS.map(s => `
+        <button class="whitespace-nowrap px-3 py-1.5 rounded-full border border-white/10 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+          ${s}
+        </button>
+      `).join('');
+    }
+
+    // --- Initialization ---
+    document.addEventListener("DOMContentLoaded", () => {
+      setDate();
+      renderAgenda();
+      renderCalendar();
+      renderDriveFiles();
+      renderTasks();
+      renderAiSuggestions();
+      
+      // Initialize Lucide Icons for static HTML elements
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>
