@@ -534,9 +534,125 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
   );
 }
 
-function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calendarStatus, status }) {
+function CalendarCreateForm({ status, onCreated }) {
+  const [draft, setDraft] = useState({
+    title: "",
+    date: "",
+    startTime: "",
+    endTime: "",
+    description: "",
+  });
+  const [submitStatus, setSubmitStatus] = useState("idle");
+  const [message, setMessage] = useState("");
+
+  function updateDraft(field, value) {
+    setDraft((currentDraft) => ({ ...currentDraft, [field]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (status !== "authenticated") {
+      setSubmitStatus("error");
+      setMessage("Google 계정을 연결하면 일정을 추가할 수 있어요.");
+      return;
+    }
+
+    setSubmitStatus("loading");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/calendar/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(draft),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "일정 추가에 실패했습니다.");
+      }
+
+      setSubmitStatus("success");
+      setMessage(data.message || "일정이 Google Calendar에 추가되었습니다.");
+      setDraft({ title: "", date: "", startTime: "", endTime: "", description: "" });
+      await onCreated();
+    } catch (error) {
+      setSubmitStatus("error");
+      setMessage(error.message || "일정 추가 중 오류가 발생했습니다.");
+    }
+  }
+
+  return (
+    <GlassCard className="xl:col-span-12">
+      <CardHeader icon={Plus} title="일정 추가" action={false} />
+      <form onSubmit={handleSubmit} className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5">
+        <input
+          value={draft.title}
+          onChange={(event) => updateDraft("title", event.target.value)}
+          placeholder="일정 제목"
+          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50 xl:col-span-2"
+        />
+        <input
+          type="date"
+          value={draft.date}
+          onChange={(event) => updateDraft("date", event.target.value)}
+          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+        />
+        <input
+          type="time"
+          value={draft.startTime}
+          onChange={(event) => updateDraft("startTime", event.target.value)}
+          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+        />
+        <input
+          type="time"
+          value={draft.endTime}
+          onChange={(event) => updateDraft("endTime", event.target.value)}
+          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+        />
+        <textarea
+          value={draft.description}
+          onChange={(event) => updateDraft("description", event.target.value)}
+          placeholder="설명 또는 메모 (선택)"
+          rows={3}
+          className="workspace-scrollbar resize-none rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50 md:col-span-2 xl:col-span-4"
+        />
+        <button
+          type="submit"
+          disabled={submitStatus === "loading"}
+          className="flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-3 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Plus className="h-4 w-4" />
+          {submitStatus === "loading" ? "추가 중..." : "일정 추가"}
+        </button>
+        {status !== "authenticated" && (
+          <p className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-50 md:col-span-2 xl:col-span-5">
+            Google 계정을 연결하면 일정을 추가할 수 있어요.
+          </p>
+        )}
+        {message && (
+          <p
+            className={`rounded-lg border p-3 text-sm md:col-span-2 xl:col-span-5 ${
+              submitStatus === "success"
+                ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-50"
+                : "border-rose-300/20 bg-rose-300/10 text-rose-50"
+            }`}
+          >
+            {message}
+          </p>
+        )}
+      </form>
+    </GlassCard>
+  );
+}
+
+function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calendarStatus, status, onCalendarCreated }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+      <CalendarCreateForm status={status} onCreated={onCalendarCreated} />
       <GlassCard className="xl:col-span-7">
         <CardHeader icon={CalendarDays} title="캘린더 개요" action={false} />
         <MiniCalendar monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />
@@ -877,6 +993,32 @@ export default function Home() {
     if (storageReady) window.localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   }, [storageReady, notes]);
 
+  async function loadCalendarEvents(signal) {
+    setCalendarStatus("loading");
+
+    try {
+      const response = await fetch("/api/calendar/events", {
+        signal,
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Calendar API request failed");
+      }
+
+      const data = await response.json();
+      setCalendarEvents({
+        today: data.today || [],
+        week: data.week || [],
+      });
+      setCalendarStatus("ready");
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      setCalendarEvents({ today: agendaItems, week: agendaItems });
+      setCalendarStatus("fallback");
+    }
+  }
+
   useEffect(() => {
     if (status === "loading") return;
 
@@ -887,34 +1029,7 @@ export default function Home() {
     }
 
     const controller = new AbortController();
-
-    async function loadCalendarEvents() {
-      setCalendarStatus("loading");
-
-      try {
-        const response = await fetch("/api/calendar/events", {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Calendar API request failed");
-        }
-
-        const data = await response.json();
-        setCalendarEvents({
-          today: data.today || [],
-          week: data.week || [],
-        });
-        setCalendarStatus("ready");
-      } catch (error) {
-        if (error.name === "AbortError") return;
-        setCalendarEvents({ today: agendaItems, week: agendaItems });
-        setCalendarStatus("fallback");
-      }
-    }
-
-    loadCalendarEvents();
+    loadCalendarEvents(controller.signal);
 
     return () => controller.abort();
   }, [status]);
@@ -1014,6 +1129,7 @@ export default function Home() {
         calendarEvents={calendarEvents}
         calendarStatus={calendarStatus}
         status={status}
+        onCalendarCreated={() => loadCalendarEvents()}
       />
     ),
     Drive: <DriveView />,
