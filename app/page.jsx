@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import {
   Bell,
   Bot,
@@ -18,6 +19,8 @@ import {
   HardDrive,
   LayoutDashboard,
   Link,
+  LogIn,
+  LogOut,
   Menu,
   MessageSquare,
   Moon,
@@ -223,6 +226,52 @@ function IconButton({ label, onClick, children, tone = "default" }) {
   );
 }
 
+function GoogleAccountPanel({ session, status, compact = false }) {
+  const isConnected = status === "authenticated";
+  const user = session?.user;
+
+  return (
+    <div className="rounded-lg border border-cyan-300/20 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          {user?.image ? (
+            <img
+              src={user.image}
+              alt={`${user.name || "Google 사용자"} 프로필 이미지`}
+              className="h-11 w-11 rounded-lg border border-white/10 object-cover"
+            />
+          ) : (
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-slate-950/50 text-cyan-200">
+              <User className="h-5 w-5" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">
+              {isConnected ? "Google 계정 연결됨" : "Google 계정 연결 필요"}
+            </p>
+            <p className="mt-1 truncate text-xs text-slate-400">
+              {isConnected ? `${user?.name || "Google 사용자"} · ${user?.email || "이메일 없음"}` : "Calendar와 Drive 연동을 위한 로그인 기반을 준비합니다."}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => (isConnected ? signOut() : signIn("google"))}
+          className={`flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition ${
+            isConnected
+              ? "border border-white/10 bg-white/[0.045] text-slate-200 hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100"
+              : "bg-cyan-300 text-slate-950 hover:bg-cyan-200"
+          } ${compact ? "sm:px-3 sm:py-2.5" : ""}`}
+        >
+          {isConnected ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+          {isConnected ? "로그아웃" : "Google 계정 연결하기"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ViewTitle({ activeView }) {
   const titles = {
     Dashboard: "대시보드",
@@ -397,9 +446,15 @@ function TaskComposer({ value, onChange, onAdd }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+      <GlassCard className="xl:col-span-12">
+        <div className="p-5">
+          <GoogleAccountPanel session={session} status={status} />
+        </div>
+      </GlassCard>
+
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader icon={CalendarDays} title="오늘의 일정" />
         <AgendaList compact />
@@ -685,9 +740,20 @@ function AssistantView({ assistantInput, setAssistantInput }) {
   );
 }
 
-function SettingsView() {
+function SettingsView({ session, status }) {
+  const isConnected = status === "authenticated";
+
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <GlassCard className="md:col-span-2 xl:col-span-4">
+        <div className="p-5">
+          <CardHeader icon={Link} title="Google 계정 연결" action={false} />
+          <div className="pt-5">
+            <GoogleAccountPanel session={session} status={status} />
+          </div>
+        </div>
+      </GlassCard>
+
       {settingsCards.map((card) => {
         const Icon = card.icon;
         return (
@@ -707,8 +773,8 @@ function SettingsView() {
         <div className="grid gap-4 p-5 md:grid-cols-3">
           {[
             { label: "테마 모드", value: "다크", icon: Moon },
-            { label: "캘린더 연결", value: "연결되지 않음", icon: Link },
-            { label: "드라이브 연결", value: "연결되지 않음", icon: HardDrive },
+            { label: "캘린더 연결", value: isConnected ? "계정 연결됨" : "계정 연결 필요", icon: Link },
+            { label: "드라이브 연결", value: isConnected ? "계정 연결됨" : "계정 연결 필요", icon: HardDrive },
           ].map((item) => {
             const Icon = item.icon;
             return (
@@ -745,6 +811,7 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal }) {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [activeView, setActiveView] = useState("Dashboard");
   const [tasks, setTasks] = useState(initialTasks);
   const [notes, setNotes] = useState(initialNotes);
@@ -779,6 +846,8 @@ export default function Home() {
   }, []);
 
   const completedCount = tasks.filter((task) => task.completed).length;
+  const signedInUser = session?.user;
+  const displayName = signedInUser?.name || "주언";
   const monthDays = Array.from({ length: 30 }, (_, index) => index + 1);
   const markedDays = [4, 9, 14, 18, 24, 28];
   const currentDay = Math.min(new Date().getDate(), 30);
@@ -848,6 +917,8 @@ export default function Home() {
         currentDay={currentDay}
         assistantInput={assistantInput}
         setAssistantInput={setAssistantInput}
+        session={session}
+        status={status}
       />
     ),
     Calendar: <CalendarView monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />,
@@ -875,7 +946,7 @@ export default function Home() {
       />
     ),
     "AI Assistant": <AssistantView assistantInput={assistantInput} setAssistantInput={setAssistantInput} />,
-    Settings: <SettingsView />,
+    Settings: <SettingsView session={session} status={status} />,
   };
 
   return (
@@ -933,7 +1004,7 @@ export default function Home() {
                 <Menu className="h-5 w-5" />
               </button>
               <div>
-                <h1 className="text-2xl font-semibold text-white">좋은 저녁이에요, 주언님</h1>
+                <h1 className="text-2xl font-semibold text-white">좋은 저녁이에요, {displayName}님</h1>
                 <p className="mt-1 text-sm text-slate-400">{todayLabel}</p>
               </div>
             </div>
@@ -953,10 +1024,32 @@ export default function Home() {
                   <Bell className="h-4 w-4" />
                   <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-cyan-300" />
                 </button>
-                <button type="button" aria-label="프로필" className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.045] px-3 py-2.5 text-sm text-slate-200 transition hover:border-violet-300/30 hover:text-white">
-                  <User className="h-4 w-4" />
-                  <span>주언</span>
-                </button>
+                {status === "authenticated" ? (
+                  <button
+                    type="button"
+                    onClick={() => signOut()}
+                    aria-label="Google 로그아웃"
+                    className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.045] px-3 py-2.5 text-sm text-slate-200 transition hover:border-violet-300/30 hover:text-white"
+                  >
+                    {signedInUser?.image ? (
+                      <img src={signedInUser.image} alt={`${displayName} 프로필 이미지`} className="h-6 w-6 rounded-md object-cover" />
+                    ) : (
+                      <User className="h-4 w-4" />
+                    )}
+                    <span className="max-w-28 truncate">{displayName}</span>
+                    <span className="hidden rounded-md bg-cyan-300/10 px-2 py-1 text-xs text-cyan-200 sm:inline">연결됨</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => signIn("google")}
+                    aria-label="Google 계정 연결하기"
+                    className="flex items-center gap-2 rounded-lg bg-cyan-300 px-3 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span>Google 계정 연결하기</span>
+                  </button>
+                )}
               </div>
             </div>
           </header>
