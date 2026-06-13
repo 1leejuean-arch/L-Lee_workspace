@@ -14,6 +14,7 @@ import {
   Clock3,
   Cloud,
   File,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   FolderOpen,
@@ -377,24 +378,51 @@ function getFileIcon(type) {
   return File;
 }
 
-function DriveFileList({ detailed = false }) {
+function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "표시할 파일이 없습니다." }) {
+  if (files.length === 0) {
+    return <p className="p-5 text-sm text-slate-500">{emptyMessage}</p>;
+  }
+
   return (
     <div className="space-y-3 p-5">
-      {driveFiles.map((file) => {
+      {files.map((file) => {
         const Icon = getFileIcon(file.type);
-        return (
-          <article key={file.id} className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]">
+        const content = (
+          <>
             <div className="rounded-lg border border-white/10 bg-slate-900/80 p-3 text-cyan-300">
-              <Icon className="h-5 w-5" />
+              {file.iconLink ? (
+                <img src={file.iconLink} alt="" className="h-5 w-5" />
+              ) : (
+                <Icon className="h-5 w-5" />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-slate-100">{file.name}</p>
               <p className="mt-1 text-xs text-slate-500">
                 {file.updated}
-                {detailed ? ` · ${file.owner} · ${file.size}` : ""}
+                {detailed ? ` · ${file.owner} · ${file.size || file.mimeType || "파일"}` : ""}
               </p>
             </div>
-          </article>
+            {file.link && <ExternalLink className="h-4 w-4 shrink-0 text-slate-600" />}
+          </>
+        );
+
+        return (
+          file.link ? (
+            <a
+              key={file.id}
+              href={file.link}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]"
+            >
+              {content}
+            </a>
+          ) : (
+            <article key={file.id} className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]">
+              {content}
+            </article>
+          )
         );
       })}
     </div>
@@ -477,7 +505,31 @@ function CalendarStatusNotice({ status, calendarStatus }) {
   return null;
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus }) {
+function DriveStatusNotice({ status, driveStatus }) {
+  if (status !== "authenticated") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm text-cyan-50">
+        Google 계정을 연결하면 Drive 파일을 볼 수 있어요.
+      </div>
+    );
+  }
+
+  if (driveStatus === "loading") {
+    return <p className="px-5 pb-5 text-sm text-slate-500">Google Drive 파일을 불러오는 중입니다...</p>;
+  }
+
+  if (driveStatus === "fallback") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-50">
+        Drive 파일을 불러오지 못해 목업 데이터를 표시합니다.
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-12">
@@ -503,7 +555,11 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader icon={FolderOpen} title="최근 Google 드라이브 파일" />
-        <DriveFileList />
+        <DriveFileList
+          files={driveFilesData}
+          emptyMessage={status === "authenticated" ? "최근 수정된 Google Drive 파일이 없습니다." : "Google 계정을 연결하면 Drive 파일을 볼 수 있어요."}
+        />
+        <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
 
       <GlassCard className="xl:col-span-4">
@@ -529,7 +585,12 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
       </GlassCard>
 
       <GlassCard className="xl:col-span-12">
-        <SummaryGrid completedCount={completedCount} taskTotal={tasks.length} noteTotal={notes.length} />
+        <SummaryGrid
+          completedCount={completedCount}
+          taskTotal={tasks.length}
+          noteTotal={notes.length}
+          driveFileTotal={driveFilesData.length}
+        />
       </GlassCard>
     </div>
   );
@@ -680,12 +741,17 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
   );
 }
 
-function DriveView() {
+function DriveView({ files, driveStatus, status }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-8">
         <CardHeader icon={HardDrive} title="최근 파일" />
-        <DriveFileList detailed />
+        <DriveFileList
+          files={files}
+          detailed
+          emptyMessage={status === "authenticated" ? "최근 수정된 Google Drive 파일이 없습니다." : "Google 계정을 연결하면 Drive 파일을 볼 수 있어요."}
+        />
+        <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
       <GlassCard className="xl:col-span-4">
         <CardHeader icon={Cloud} title="저장공간 요약" action={false} />
@@ -1052,14 +1118,14 @@ function SettingsView({ session, status }) {
   );
 }
 
-function SummaryGrid({ completedCount, taskTotal, noteTotal }) {
+function SummaryGrid({ completedCount, taskTotal, noteTotal, driveFileTotal }) {
   return (
     <div className="grid gap-4 p-5 md:grid-cols-4">
       {[
         ["완료한 할 일", `${completedCount}/${taskTotal}`, "로컬에 저장된 할 일"],
         ["메모", String(noteTotal), "로컬에 저장된 메모"],
         ["오늘 일정", String(agendaItems.length), "캘린더 목업 데이터"],
-        ["최근 파일", String(driveFiles.length), "드라이브 목업 데이터"],
+        ["최근 파일", String(driveFileTotal), "드라이브 파일 메타데이터"],
       ].map(([label, value, helper]) => (
         <div key={label} className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
           <p className="text-xs text-slate-500">{label}</p>
@@ -1084,6 +1150,8 @@ export default function Home() {
   const [storageReady, setStorageReady] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [] });
   const [calendarStatus, setCalendarStatus] = useState("idle");
+  const [driveFilesData, setDriveFilesData] = useState([]);
+  const [driveStatus, setDriveStatus] = useState("idle");
 
   useEffect(() => {
     setTasks(localizeStoredTasks(loadStoredItems(TASKS_KEY, initialTasks)));
@@ -1136,6 +1204,45 @@ export default function Home() {
 
     const controller = new AbortController();
     loadCalendarEvents(controller.signal);
+
+    return () => controller.abort();
+  }, [status]);
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (status !== "authenticated") {
+      setDriveFilesData([]);
+      setDriveStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadDriveFiles() {
+      setDriveStatus("loading");
+
+      try {
+        const response = await fetch("/api/drive/files", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Drive API request failed");
+        }
+
+        const data = await response.json();
+        setDriveFilesData(data.files || []);
+        setDriveStatus("ready");
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        setDriveFilesData(driveFiles);
+        setDriveStatus("fallback");
+      }
+    }
+
+    loadDriveFiles();
 
     return () => controller.abort();
   }, [status]);
@@ -1225,6 +1332,8 @@ export default function Home() {
         status={status}
         calendarEvents={calendarEvents}
         calendarStatus={calendarStatus}
+        driveFilesData={driveFilesData}
+        driveStatus={driveStatus}
       />
     ),
     Calendar: (
@@ -1238,7 +1347,7 @@ export default function Home() {
         onCalendarCreated={() => loadCalendarEvents()}
       />
     ),
-    Drive: <DriveView />,
+    Drive: <DriveView files={driveFilesData} driveStatus={driveStatus} status={status} />,
     Notes: (
       <NotesView
         notes={notes}
