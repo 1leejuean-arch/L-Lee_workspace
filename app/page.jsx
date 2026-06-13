@@ -342,10 +342,16 @@ function MiniCalendar({ monthDays, markedDays, currentDay }) {
   );
 }
 
-function AgendaList({ compact = false }) {
+function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표시할 일정이 없습니다." }) {
+  const visibleEvents = events.slice(0, compact ? 4 : events.length);
+
+  if (visibleEvents.length === 0) {
+    return <p className="p-5 text-sm text-slate-500">{emptyMessage}</p>;
+  }
+
   return (
     <div className="space-y-3 p-5">
-      {agendaItems.slice(0, compact ? 4 : agendaItems.length).map((item) => (
+      {visibleEvents.map((item) => (
         <article key={item.id} className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]">
           <div className={`h-12 w-1 rounded-full ${item.accent}`} />
           <div className="min-w-0 flex-1">
@@ -446,7 +452,31 @@ function TaskComposer({ value, onChange, onAdd }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status }) {
+function CalendarStatusNotice({ status, calendarStatus }) {
+  if (status !== "authenticated") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm text-cyan-50">
+        Google 계정을 연결하면 캘린더 일정을 볼 수 있어요.
+      </div>
+    );
+  }
+
+  if (calendarStatus === "loading") {
+    return <p className="px-5 pb-5 text-sm text-slate-500">Google Calendar 일정을 불러오는 중입니다...</p>;
+  }
+
+  if (calendarStatus === "fallback") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-50">
+        Google Calendar 일정을 가져오지 못해 목업 일정을 표시하고 있어요.
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-12">
@@ -457,7 +487,12 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader icon={CalendarDays} title="오늘의 일정" />
-        <AgendaList compact />
+        <AgendaList
+          events={calendarEvents.today}
+          compact
+          emptyMessage={status === "authenticated" ? "오늘 예정된 Google Calendar 일정이 없습니다." : "Google 계정을 연결하면 오늘 일정을 볼 수 있어요."}
+        />
+        <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
 
       <GlassCard className="xl:col-span-4">
@@ -499,7 +534,7 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
   );
 }
 
-function CalendarView({ monthDays, markedDays, currentDay }) {
+function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calendarStatus, status }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-7">
@@ -507,8 +542,12 @@ function CalendarView({ monthDays, markedDays, currentDay }) {
         <MiniCalendar monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />
       </GlassCard>
       <GlassCard className="xl:col-span-5">
-        <CardHeader icon={Clock3} title="다가오는 일정" />
-        <AgendaList />
+        <CardHeader icon={Clock3} title="이번 주 일정" />
+        <AgendaList
+          events={calendarEvents.week}
+          emptyMessage={status === "authenticated" ? "이번 주 예정된 Google Calendar 일정이 없습니다." : "Google 계정을 연결하면 이번 주 일정을 볼 수 있어요."}
+        />
+        <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
       <GlassCard className="xl:col-span-12">
         <div className="grid gap-4 p-5 md:grid-cols-3">
@@ -821,6 +860,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [assistantInput, setAssistantInput] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [] });
+  const [calendarStatus, setCalendarStatus] = useState("idle");
 
   useEffect(() => {
     setTasks(localizeStoredTasks(loadStoredItems(TASKS_KEY, initialTasks)));
@@ -835,6 +876,48 @@ export default function Home() {
   useEffect(() => {
     if (storageReady) window.localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   }, [storageReady, notes]);
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (status !== "authenticated") {
+      setCalendarEvents({ today: [], week: [] });
+      setCalendarStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadCalendarEvents() {
+      setCalendarStatus("loading");
+
+      try {
+        const response = await fetch("/api/calendar/events", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Calendar API request failed");
+        }
+
+        const data = await response.json();
+        setCalendarEvents({
+          today: data.today || [],
+          week: data.week || [],
+        });
+        setCalendarStatus("ready");
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        setCalendarEvents({ today: agendaItems, week: agendaItems });
+        setCalendarStatus("fallback");
+      }
+    }
+
+    loadCalendarEvents();
+
+    return () => controller.abort();
+  }, [status]);
 
   const todayLabel = useMemo(() => {
     return new Intl.DateTimeFormat("ko-KR", {
@@ -919,9 +1002,20 @@ export default function Home() {
         setAssistantInput={setAssistantInput}
         session={session}
         status={status}
+        calendarEvents={calendarEvents}
+        calendarStatus={calendarStatus}
       />
     ),
-    Calendar: <CalendarView monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />,
+    Calendar: (
+      <CalendarView
+        monthDays={monthDays}
+        markedDays={markedDays}
+        currentDay={currentDay}
+        calendarEvents={calendarEvents}
+        calendarStatus={calendarStatus}
+        status={status}
+      />
+    ),
     Drive: <DriveView />,
     Notes: (
       <NotesView
