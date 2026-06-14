@@ -1185,6 +1185,8 @@ export default function Home() {
   const userEmail = session?.user?.email || null;
 
   useEffect(() => {
+    if (status === "loading") return;
+
     let isActive = true;
 
     async function loadWorkspaceData() {
@@ -1227,7 +1229,7 @@ export default function Home() {
     return () => {
       isActive = false;
     };
-  }, [userEmail]);
+  }, [status, userEmail]);
 
   useEffect(() => {
     if (storageReady) window.localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
@@ -1245,6 +1247,12 @@ export default function Home() {
         signal,
         cache: "no-store",
       });
+
+      if (response.status === 401) {
+        setCalendarEvents({ today: [], week: [] });
+        setCalendarStatus("idle");
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Calendar API request failed");
@@ -1297,6 +1305,12 @@ export default function Home() {
           signal: controller.signal,
           cache: "no-store",
         });
+
+        if (response.status === 401) {
+          setDriveFilesData([]);
+          setDriveStatus("idle");
+          return;
+        }
 
         if (!response.ok) {
           throw new Error("Drive API request failed");
