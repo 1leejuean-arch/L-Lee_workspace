@@ -93,35 +93,47 @@ async function parseWithGemini(input) {
 }
 
 export async function POST(request) {
-  const body = await request.json();
-  const input = body.input?.trim();
+  try {
+    const body = await request.json().catch(() => ({}));
+    const input = body.input?.trim();
 
-  if (!input) {
+    if (!input) {
+      return NextResponse.json(
+        {
+          intent: "unknown",
+          message: "분석할 문장을 입력해주세요.",
+          source: "validation",
+        },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const geminiResult = await parseWithGemini(input);
+
+      if (geminiResult) {
+        return NextResponse.json({
+          ...normalizeCalendarParseResult(geminiResult, input),
+          source: "gemini",
+        });
+      }
+    } catch (error) {
+      console.error("Gemini parse failed, falling back to local parser:", error);
+    }
+
+    return NextResponse.json({
+      ...parseCalendarRequest(input),
+      source: "fallback",
+    });
+  } catch (error) {
+    console.error("Assistant parse failed:", error);
     return NextResponse.json(
       {
         intent: "unknown",
-        message: "분석할 문장을 입력해주세요.",
-        source: "validation",
+        message: "일정 요청을 분석하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        source: "error",
       },
-      { status: 400 },
+      { status: 500 },
     );
   }
-
-  try {
-    const geminiResult = await parseWithGemini(input);
-
-    if (geminiResult) {
-      return NextResponse.json({
-        ...normalizeCalendarParseResult(geminiResult, input),
-        source: "gemini",
-      });
-    }
-  } catch (error) {
-    console.error("Gemini parse failed, falling back to local parser:", error);
-  }
-
-  return NextResponse.json({
-    ...parseCalendarRequest(input),
-    source: "fallback",
-  });
 }

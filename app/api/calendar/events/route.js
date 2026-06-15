@@ -56,50 +56,79 @@ function getDateRange() {
   weekEnd.setDate(weekEnd.getDate() + 7);
   weekEnd.setHours(23, 59, 59, 999);
 
-  return { todayStart, tomorrowStart, weekEnd };
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  monthEnd.setHours(23, 59, 59, 999);
+
+  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd };
+}
+
+async function readGoogleError(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const data = await response.json();
+      return data.error?.message || data.error || data.message || "Google Calendar API error";
+    } catch {
+      return "Google Calendar API error";
+    }
+  }
+
+  return (await response.text().catch(() => "")) || "Google Calendar API error";
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  try {
+    const session = await getServerSession(authOptions);
 
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
+    if (!session?.accessToken) {
+      return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
+    }
+
+    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd } = getDateRange();
+    const params = new URLSearchParams({
+      timeMin: monthStart.toISOString(),
+      timeMax: monthEnd.toISOString(),
+      singleEvents: "true",
+      orderBy: "startTime",
+      maxResults: "100",
+    });
+
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const details = await readGoogleError(response);
+      return NextResponse.json(
+        { error: "Google Calendar 일정을 가져오지 못했습니다.", details },
+        { status: response.status },
+      );
+    }
+
+    const data = await response.json();
+    const monthEvents = (data.items || []).map(normalizeEvent);
+    const todayEvents = monthEvents.filter((event) => {
+      const start = new Date(event.start);
+      return start >= todayStart && start < tomorrowStart;
+    });
+    const weekEvents = monthEvents.filter((event) => {
+      const start = new Date(event.start);
+      return start >= todayStart && start <= weekEnd;
+    });
+
+    return NextResponse.json({
+      today: todayEvents,
+      week: weekEvents,
+      month: monthEvents,
+      source: "google-calendar",
+    });
+  } catch (error) {
+    console.error("Calendar events failed:", error);
+    return NextResponse.json({ error: "Google Calendar 일정을 가져오지 못했습니다." }, { status: 500 });
   }
-
-  const { todayStart, tomorrowStart, weekEnd } = getDateRange();
-  const params = new URLSearchParams({
-    timeMin: todayStart.toISOString(),
-    timeMax: weekEnd.toISOString(),
-    singleEvents: "true",
-    orderBy: "startTime",
-    maxResults: "30",
-  });
-
-  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    return NextResponse.json(
-      { error: "Google Calendar 일정을 가져오지 못했습니다.", details },
-      { status: response.status },
-    );
-  }
-
-  const data = await response.json();
-  const weekEvents = (data.items || []).map(normalizeEvent);
-  const todayEvents = weekEvents.filter((event) => {
-    const start = new Date(event.start);
-    return start >= todayStart && start < tomorrowStart;
-  });
-
-  return NextResponse.json({
-    today: todayEvents,
-    week: weekEvents,
-    source: "google-calendar",
-  });
 }

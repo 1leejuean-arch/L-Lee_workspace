@@ -22,10 +22,10 @@ function jsonError(message, status = 500) {
 }
 
 export async function GET() {
-  const userEmail = await getUserEmail();
-  if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
-
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
       .from("tasks")
@@ -34,7 +34,7 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json({ tasks: data.map(mapTaskRow) });
+    return NextResponse.json({ tasks: (data || []).map(mapTaskRow) });
   } catch (error) {
     console.error("Tasks GET failed:", error);
     return jsonError("할 일을 불러오지 못했습니다.");
@@ -42,14 +42,14 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const userEmail = await getUserEmail();
-  if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
-
-  const body = await request.json();
-  const title = body.title?.trim();
-  if (!title) return jsonError("할 일 제목이 필요합니다.", 400);
-
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+
+    const body = await request.json().catch(() => ({}));
+    const title = body.title?.trim();
+    if (!title) return jsonError("할 일 제목이 필요합니다.", 400);
+
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
       .from("tasks")
@@ -71,13 +71,13 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const userEmail = await getUserEmail();
-  if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
-
-  const body = await request.json();
-  if (!body.id) return jsonError("수정할 할 일 ID가 필요합니다.", 400);
-
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+
+    const body = await request.json().catch(() => ({}));
+    if (!body.id) return jsonError("수정할 할 일 ID가 필요합니다.", 400);
+
     const supabase = getSupabaseServerClient();
     const { error } = await supabase
       .from("tasks")
@@ -99,13 +99,13 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
-  const userEmail = await getUserEmail();
-  if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
-
-  const body = await request.json();
-  if (!body.id) return jsonError("삭제할 할 일 ID가 필요합니다.", 400);
-
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+
+    const body = await request.json().catch(() => ({}));
+    if (!body.id) return jsonError("삭제할 할 일 ID가 필요합니다.", 400);
+
     const supabase = getSupabaseServerClient();
     const { error } = await supabase
       .from("tasks")

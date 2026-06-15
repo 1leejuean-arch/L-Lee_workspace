@@ -6,63 +6,90 @@ function buildDateTime(date, time) {
   return `${date}T${time}:00`;
 }
 
+async function readGoogleError(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const data = await response.json();
+      return data.error?.message || data.error || data.message || "Google Calendar API error";
+    } catch {
+      return "Google Calendar API error";
+    }
+  }
+
+  return (await response.text().catch(() => "")) || "Google Calendar API error";
+}
+
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  try {
+    const session = await getServerSession(authOptions);
 
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
-  }
+    if (!session) {
+      return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
+    }
 
-  const body = await request.json();
-  const title = body.title?.trim();
-  const date = body.date;
-  const startTime = body.startTime;
-  const endTime = body.endTime;
-  const description = body.description?.trim();
+    if (!session.accessToken) {
+      return NextResponse.json({ error: "캘린더 권한이 만료되었습니다. 다시 로그인해주세요." }, { status: 401 });
+    }
 
-  if (!title || !date || !startTime || !endTime) {
-    return NextResponse.json({ error: "일정 제목, 날짜, 시작 시간, 종료 시간을 모두 입력해주세요." }, { status: 400 });
-  }
+    const body = await request.json().catch(() => ({}));
+    const title = body.title?.trim();
+    const date = body.date;
+    const startTime = body.startTime;
+    const endTime = body.endTime;
+    const description = body.description?.trim();
 
-  const startDateTime = buildDateTime(date, startTime);
-  const endDateTime = buildDateTime(date, endTime);
+    if (!title || !date || !startTime || !endTime) {
+      return NextResponse.json({ error: "일정 제목, 날짜, 시작 시간, 종료 시간을 모두 입력해주세요." }, { status: 400 });
+    }
 
-  if (new Date(endDateTime) <= new Date(startDateTime)) {
-    return NextResponse.json({ error: "종료 시간은 시작 시간보다 늦어야 합니다." }, { status: 400 });
-  }
+    const startDateTime = buildDateTime(date, startTime);
+    const endDateTime = buildDateTime(date, endTime);
 
-  const response = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      summary: title,
-      description,
-      start: {
-        dateTime: startDateTime,
-        timeZone: "Asia/Seoul",
+    if (new Date(endDateTime) <= new Date(startDateTime)) {
+      return NextResponse.json({ error: "종료 시간은 시작 시간보다 늦어야 합니다." }, { status: 400 });
+    }
+
+    const response = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        "Content-Type": "application/json",
       },
-      end: {
-        dateTime: endDateTime,
-        timeZone: "Asia/Seoul",
-      },
-    }),
-  });
+      body: JSON.stringify({
+        summary: title,
+        description,
+        start: {
+          dateTime: startDateTime,
+          timeZone: "Asia/Seoul",
+        },
+        end: {
+          dateTime: endDateTime,
+          timeZone: "Asia/Seoul",
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    const details = await response.text();
+    if (!response.ok) {
+      const details = await readGoogleError(response);
+      return NextResponse.json(
+        { error: "일정을 추가하지 못했습니다. 잠시 후 다시 시도해주세요.", details },
+        { status: response.status },
+      );
+    }
+
+    const event = await response.json();
+
+    return NextResponse.json({
+      message: "일정이 Google Calendar에 추가되었습니다.",
+      event,
+    });
+  } catch (error) {
+    console.error("Calendar create failed:", error);
     return NextResponse.json(
-      { error: "Google Calendar에 일정을 추가하지 못했습니다.", details },
-      { status: response.status },
+      { error: "일정을 추가하지 못했습니다. 잠시 후 다시 시도해주세요." },
+      { status: 500 },
     );
   }
-
-  const event = await response.json();
-
-  return NextResponse.json({
-    message: "일정이 Google Calendar에 추가되었습니다.",
-    event,
-  });
 }

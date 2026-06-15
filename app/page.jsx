@@ -28,12 +28,15 @@ import {
   FileText,
   FolderOpen,
   HardDrive,
+  Instagram,
   LayoutDashboard,
   Link,
   LogIn,
   LogOut,
+  Mail,
   Menu,
   MessageSquare,
+  Music,
   Moon,
   MoreHorizontal,
   Palette,
@@ -44,13 +47,257 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Sun,
   Trash2,
   User,
+  Youtube,
   X,
 } from "lucide-react";
 
 const TASKS_KEY = "l-lee-workspace.tasks";
 const NOTES_KEY = "l-lee-workspace.notes";
+const CALENDAR_EVENTS_KEY = "l-lee-workspace.calendarEvents";
+const DRIVE_FILES_KEY = "l-lee-workspace.driveFiles";
+const THEME_KEY = "l-lee-workspace.theme";
+
+const themeOptions = [
+  {
+    key: "dark-glass",
+    name: "다크 글래스",
+    description: "딥 네이비, 시안, 바이올렛",
+    icon: Moon,
+  },
+  {
+    key: "light-glass",
+    name: "라이트 글래스",
+    description: "소프트 화이트, 아이스 블루, 라벤더",
+    icon: Sun,
+  },
+  {
+    key: "rgb-glass",
+    name: "RGB 글래스",
+    description: "네온 레드, 그린, 블루",
+    icon: Sparkles,
+  },
+];
+
+const quickLaunchApps = [
+  {
+    name: "YouTube Music",
+    description: "음악 스트리밍",
+    href: "https://music.youtube.com",
+    icon: Music,
+    color: "from-red-400/25 to-pink-500/10 text-red-200",
+  },
+  {
+    name: "Instagram",
+    aliases: ["인스타", "인스타그램", "instagram"],
+    description: "피드와 메시지",
+    href: "https://www.instagram.com",
+    icon: Instagram,
+    color: "from-pink-400/25 to-violet-500/10 text-pink-200",
+  },
+  {
+    name: "Discord",
+    aliases: ["디스코드", "discord"],
+    description: "커뮤니티 채팅",
+    href: "https://discord.com/app",
+    icon: MessageSquare,
+    color: "from-indigo-400/25 to-blue-500/10 text-indigo-200",
+  },
+  {
+    name: "내 메일",
+    aliases: ["메일", "내 메일", "mail", "이메일"],
+    description: "메일함 열기",
+    href: "https://mail.1leejuean.kr",
+    icon: Mail,
+    color: "from-emerald-300/25 to-cyan-500/10 text-emerald-200",
+  },
+  {
+    name: "Google Calendar",
+    aliases: ["구글 캘린더", "캘린더", "google calendar"],
+    description: "캘린더 웹",
+    href: "https://calendar.google.com",
+    icon: CalendarDays,
+    color: "from-cyan-300/25 to-blue-500/10 text-cyan-200",
+  },
+  {
+    name: "Google Drive",
+    aliases: ["구글 드라이브", "드라이브", "google drive"],
+    description: "드라이브 웹",
+    href: "https://drive.google.com",
+    icon: HardDrive,
+    color: "from-lime-300/25 to-emerald-500/10 text-lime-200",
+  },
+  {
+    name: "YouTube",
+    aliases: ["유튜브", "youtube"],
+    description: "동영상 바로가기",
+    href: "https://www.youtube.com",
+    icon: Youtube,
+    color: "from-red-500/25 to-orange-500/10 text-red-200",
+  },
+  {
+    name: "ChatGPT",
+    aliases: ["chatgpt", "챗지피티", "챗 gpt", "chat gpt"],
+    description: "AI 작업 도우미",
+    href: "https://chatgpt.com",
+    icon: Bot,
+    color: "from-teal-300/25 to-emerald-500/10 text-teal-200",
+  },
+  {
+    name: "Gemini",
+    aliases: ["gemini", "제미나이", "구글 ai"],
+    description: "Google AI",
+    href: "https://gemini.google.com",
+    icon: Sparkles,
+    color: "from-violet-300/25 to-fuchsia-500/10 text-violet-200",
+  },
+];
+
+const assistantAppShortcuts = [
+  ...quickLaunchApps,
+  {
+    name: "KakaoTalk",
+    aliases: ["카톡", "카카오톡", "kakao", "kakaotalk"],
+    href: "https://www.kakaocorp.com/page/service/service/KakaoTalk",
+  },
+];
+
+async function readApiResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      return { data: await response.json(), text: "" };
+    } catch {
+      throw new Error("서버 응답을 읽지 못했습니다.");
+    }
+  }
+
+  return { data: null, text: await response.text().catch(() => "") };
+}
+
+function getApiErrorMessage(response, data, text, fallback) {
+  if (response.status === 401) {
+    return data?.error || "Google 계정 연결이 필요합니다.";
+  }
+
+  return data?.error || text || fallback;
+}
+
+function normalizeCommand(input) {
+  return input.trim().toLowerCase();
+}
+
+function findAssistantShortcut(input) {
+  const normalizedInput = normalizeCommand(input);
+  return assistantAppShortcuts.find((app) =>
+    (app.aliases || [app.name]).some((alias) => normalizedInput.includes(alias.toLowerCase())),
+  );
+}
+
+function getAssistantIntent(input) {
+  const text = normalizeCommand(input);
+
+  if ((text.includes("열어") || text.includes("켜줘") || text.includes("바로가기")) && findAssistantShortcut(text)) {
+    return "app_open";
+  }
+  if (text.includes("드라이브") && (text.includes("정리") || text.includes("최근") || text.includes("보여") || text.includes("요약"))) {
+    return "drive_summary";
+  }
+  if (text.includes("일정") && (text.includes("요약") || text.includes("알려") || text.includes("정리") || text.includes("남은"))) {
+    return "calendar_summary";
+  }
+  if ((text.includes("할 일") || text.includes("할일")) && (text.includes("추가") || text.includes("넣어") || text.includes("등록"))) {
+    return "task_create";
+  }
+  if (text.includes("메모") && (text.includes("추가") || text.includes("적어") || text.includes("기록") || text.includes("저장"))) {
+    return "note_create";
+  }
+  if (text.includes("일정") || text.includes("예약") || text.includes("회의") || text.includes("운동")) {
+    return "calendar_create";
+  }
+
+  return "general_help";
+}
+
+function stripCommandText(input, patterns) {
+  let value = input.trim();
+  patterns.forEach((pattern) => {
+    value = value.replace(pattern, " ");
+  });
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractTaskTitle(input) {
+  return stripCommandText(input, [/할\s*일/g, /오늘/g, /로/g, /에/g, /추가해줘/g, /추가/g, /넣어줘/g, /등록해줘/g]).trim();
+}
+
+function extractNoteDraft(input) {
+  const cleaned = stripCommandText(input, [/메모에/g, /메모로/g, /메모/g, /적어줘/g, /기록해줘/g, /저장해줘/g, /추가해줘/g]);
+  const [rawTitle, ...bodyParts] = cleaned.split(":");
+  const body = bodyParts.join(":").trim();
+
+  if (body) {
+    return {
+      title: rawTitle.trim() || "메모",
+      body,
+      tag: "AI",
+    };
+  }
+
+  return {
+    title: "AI 메모",
+    body: cleaned.trim(),
+    tag: "AI",
+  };
+}
+
+function formatEventSummary(events, scopeLabel) {
+  if (!events.length) return `${scopeLabel} 예정된 일정이 없습니다.`;
+
+  const lines = events.slice(0, 6).map((event, index) => `${index + 1}. ${event.time || "시간 미정"} - ${event.title}`);
+  const suffix = events.length > 6 ? `\n외 ${events.length - 6}개 일정이 더 있어요.` : "";
+  return `${scopeLabel} 일정은 ${events.length}개예요.\n${lines.join("\n")}${suffix}`;
+}
+
+function summarizeCalendar(input, calendarEvents) {
+  const text = normalizeCommand(input);
+  if (text.includes("이번 주") || text.includes("이번주")) {
+    return formatEventSummary(calendarEvents.week || [], "이번 주");
+  }
+  return formatEventSummary(calendarEvents.today || [], "오늘");
+}
+
+function summarizeDriveFiles(files) {
+  if (!files.length) return "최근 Google Drive 파일을 찾지 못했어요. Google 계정 연결이나 Drive 권한을 확인해주세요.";
+
+  const lines = files.slice(0, 5).map((file, index) => `${index + 1}. ${file.name} (${file.updated || "수정일 없음"})`);
+  return `최근 Drive 파일 ${Math.min(files.length, 5)}개를 정리했어요.\n${lines.join("\n")}`;
+}
+
+function getCalendarCreateErrorMessage(error) {
+  const message = error?.message || "";
+
+  if (message.includes("Google 계정") || message.includes("로그인")) {
+    return "Google 계정 연결이 필요합니다.";
+  }
+
+  if (message.includes("권한") || message.includes("token") || message.includes("Token")) {
+    return "캘린더 권한이 만료되었습니다. 다시 로그인해주세요.";
+  }
+
+  if (message.includes("제목") || message.includes("날짜") || message.includes("시간")) {
+    return message;
+  }
+
+  if (message === "서버 응답을 읽지 못했습니다.") {
+    return message;
+  }
+
+  return "일정을 추가하지 못했습니다. 잠시 후 다시 시도해주세요.";
+}
 
 const sidebarItems = [
   { key: "Dashboard", label: "대시보드", icon: LayoutDashboard },
@@ -59,6 +306,7 @@ const sidebarItems = [
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
   { key: "AI Assistant", label: "AI 비서", icon: Bot },
+  { key: "Quick Launch", label: "앱 바로가기", icon: Link },
   { key: "Settings", label: "설정", icon: Settings },
 ];
 
@@ -118,19 +366,15 @@ const aiSuggestions = [
   "오늘 일정 요약해줘",
   "최근 드라이브 파일 정리해줘",
   "이번 주 할 일 우선순위 잡아줘",
+  "인스타 열어줘",
+  "디스코드 열어줘",
+  "내 메일 열어줘",
 ];
 
 const aiMessages = [
   { id: 1, role: "assistant", text: "안녕하세요, 주언님. 오늘 일정, 파일, 메모, 할 일을 한곳에서 정리할 준비가 되어 있어요." },
   { id: 2, role: "user", text: "오늘 남은 일정과 할 일을 요약해줘." },
   { id: 3, role: "assistant", text: "남은 일정은 집중 작업 시간과 저녁 회고가 있고, 우선 처리할 작업은 캘린더 API 권한 범위 검토입니다." },
-];
-
-const settingsCards = [
-  { title: "프로필", value: "이주언", helper: "개인 워크스페이스 소유자", icon: User },
-  { title: "테마", value: "다크 글래스", helper: "딥 네이비, 시안, 바이올렛", icon: Palette },
-  { title: "Google 캘린더", value: "목업 상태", helper: "OAuth는 아직 연결되지 않았습니다", icon: CalendarDays },
-  { title: "Google 드라이브", value: "목업 상태", helper: "드라이브 API는 아직 연결되지 않았습니다", icon: Cloud },
 ];
 
 const taskTitleTranslations = {
@@ -201,7 +445,7 @@ function localizeStoredNotes(storedNotes) {
 function GlassCard({ children, className = "" }) {
   return (
     <section
-      className={`rounded-lg border border-white/10 bg-white/[0.045] shadow-glow backdrop-blur-2xl transition duration-300 hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-white/[0.07] ${className}`}
+      className={`rounded-lg border border-[color:var(--workspace-border)] bg-[var(--workspace-card)] shadow-glow backdrop-blur-2xl transition duration-300 hover:-translate-y-1 hover:border-[color:var(--workspace-accent-soft)] hover:bg-[var(--workspace-card-hover)] ${className}`}
     >
       {children}
     </section>
@@ -237,7 +481,7 @@ function IconButton({ label, onClick, children, tone = "default" }) {
   );
 }
 
-function GoogleAccountPanel({ session, status, compact = false }) {
+function GoogleAccountPanel({ session, status, compact = false, onLogout }) {
   const isConnected = status === "authenticated";
   const user = session?.user;
 
@@ -268,7 +512,7 @@ function GoogleAccountPanel({ session, status, compact = false }) {
 
         <button
           type="button"
-          onClick={() => (isConnected ? signOut() : signIn("google"))}
+          onClick={() => (isConnected ? onLogout?.() : signIn("google"))}
           className={`flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition ${
             isConnected
               ? "border border-white/10 bg-white/[0.045] text-slate-200 hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100"
@@ -291,6 +535,7 @@ function ViewTitle({ activeView }) {
     Notes: "메모",
     Tasks: "할 일",
     "AI Assistant": "AI 비서",
+    "Quick Launch": "앱 바로가기",
     Settings: "설정",
   };
 
@@ -301,6 +546,7 @@ function ViewTitle({ activeView }) {
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
     "AI Assistant": "예시 명령어를 담은 채팅형 워크스페이스 AI 비서 화면입니다.",
+    "Quick Launch": "자주 쓰는 외부 앱과 서비스를 한곳에서 빠르게 엽니다.",
     Settings: "프로필, 테마, Google 연결 상태를 확인하는 설정 화면입니다.",
   };
 
@@ -538,12 +784,147 @@ function DriveStatusNotice({ status, driveStatus }) {
   return null;
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus }) {
+function QuickLaunchGrid() {
+  return (
+    <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+      {quickLaunchApps.map((app) => {
+        const Icon = app.icon;
+
+        return (
+          <a
+            key={app.name}
+            href={app.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex min-h-24 items-center gap-3 rounded-lg border border-white/10 bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-white/[0.08]"
+          >
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${app.color}`}>
+              <Icon className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-slate-100">{app.name}</span>
+              <span className="mt-1 block truncate text-xs text-slate-500">{app.description}</span>
+            </span>
+            <ExternalLink className="h-4 w-4 shrink-0 text-slate-600 transition group-hover:text-cyan-200" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuickLaunchView() {
+  return (
+    <GlassCard>
+      <CardHeader icon={Link} title="앱 바로가기" action={false} />
+      <QuickLaunchGrid />
+    </GlassCard>
+  );
+}
+
+function SearchResultsPanel({ results, onSelect }) {
+  return (
+    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
+      {results.length > 0 ? (
+        <div className="max-h-96 overflow-y-auto p-2">
+          {results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onSelect(result)}
+              className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-white/[0.07]"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-slate-100">{result.title}</span>
+                <span className="mt-1 block truncate text-xs text-slate-500">{result.helper}</span>
+              </span>
+              <span className="shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{result.type}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>
+      )}
+    </div>
+  );
+}
+
+function NotificationPanel({ notifications, onSelect }) {
+  return (
+    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-80 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
+      <div className="border-b border-white/10 px-4 py-3">
+        <p className="text-sm font-semibold text-white">알림</p>
+        <p className="mt-1 text-xs text-slate-500">워크스페이스 상태를 빠르게 확인합니다.</p>
+      </div>
+      <div className="max-h-96 overflow-y-auto p-2">
+        {notifications.map((notification) => (
+          <button
+            key={notification.id}
+            type="button"
+            onClick={() => onSelect(notification)}
+            className="flex w-full gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-white/[0.07]"
+          >
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.dot}`} />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-slate-100">{notification.title}</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">{notification.message}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus, serviceName }) {
+  if (!isConnected) {
+    return {
+      value: "Google 계정 연결 필요",
+      helper: `Google 계정을 연결하면 ${serviceName}를 사용할 수 있습니다.`,
+    };
+  }
+
+  if (!hasAccessToken) {
+    return {
+      value: "다시 로그인 필요",
+      helper: `${serviceName} 권한을 확인하려면 Google 계정으로 다시 로그인해주세요.`,
+    };
+  }
+
+  if (serviceStatus === "reauth") {
+    return {
+      value: "다시 로그인 필요",
+      helper: `${serviceName} API 권한이 만료되었을 수 있습니다. Google 계정으로 다시 로그인해주세요.`,
+    };
+  }
+
+  if (serviceStatus === "fallback") {
+    return {
+      value: "권한 확인 필요",
+      helper: `${serviceName} API 응답을 가져오지 못했습니다. 권한을 확인하거나 다시 로그인해주세요.`,
+    };
+  }
+
+  if (serviceStatus === "loading") {
+    return {
+      value: "연결 확인 중",
+      helper: `${serviceName} API 연결 상태를 확인하고 있습니다.`,
+    };
+  }
+
+  return {
+    value: `${serviceName} API 사용 가능`,
+    helper: `${serviceName} 데이터를 워크스페이스에서 사용할 수 있습니다.`,
+  };
+}
+
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-12">
         <div className="p-5">
-          <GoogleAccountPanel session={session} status={status} />
+          <GoogleAccountPanel session={session} status={status} onLogout={onLogout} />
         </div>
       </GlassCard>
 
@@ -640,19 +1021,19 @@ function CalendarCreateForm({ status, onCreated }) {
         },
         body: JSON.stringify(draft),
       });
-      const data = await response.json();
+      const { data, text } = await readApiResponse(response);
 
       if (!response.ok) {
-        throw new Error(data.error || "일정 추가에 실패했습니다.");
+        throw new Error(getApiErrorMessage(response, data, text, "일정 추가에 실패했습니다."));
       }
 
       setSubmitStatus("success");
-      setMessage(data.message || "일정이 Google Calendar에 추가되었습니다.");
+      setMessage(data?.message || "일정이 Google Calendar에 추가되었습니다.");
       setDraft({ title: "", date: "", startTime: "", endTime: "", description: "" });
       await onCreated();
     } catch (error) {
       setSubmitStatus("error");
-      setMessage(error.message || "일정 추가 중 오류가 발생했습니다.");
+      setMessage(getCalendarCreateErrorMessage(error));
     }
   }
 
@@ -720,7 +1101,49 @@ function CalendarCreateForm({ status, onCreated }) {
   );
 }
 
+function getDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getEventDateKey(event) {
+  if (!event?.start) return "";
+  const date = new Date(event.start);
+  if (Number.isNaN(date.getTime())) return "";
+  return getDateInputValue(date);
+}
+
+function getCalendarScopeLabel(mode, selectedDate) {
+  if (mode === "day") {
+    return new Intl.DateTimeFormat("ko-KR", {
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+    }).format(new Date(`${selectedDate}T00:00:00`));
+  }
+
+  if (mode === "month") return "이번달 일정";
+  return "이번 주 일정";
+}
+
 function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calendarStatus, status, onCalendarCreated }) {
+  const [scheduleMode, setScheduleMode] = useState("week");
+  const [selectedDate, setSelectedDate] = useState(getDateInputValue());
+  const monthEvents = calendarEvents.month || calendarEvents.week || [];
+  const selectedEvents =
+    scheduleMode === "day"
+      ? monthEvents.filter((event) => getEventDateKey(event) === selectedDate)
+      : scheduleMode === "month"
+        ? monthEvents
+        : calendarEvents.week || [];
+  const scheduleTitle = getCalendarScopeLabel(scheduleMode, selectedDate);
+  const emptyMessage =
+    status === "authenticated"
+      ? `${scheduleTitle}에 표시할 Google Calendar 일정이 없습니다.`
+      : "Google 계정을 연결하면 일정을 볼 수 있어요.";
+
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <CalendarCreateForm status={status} onCreated={onCalendarCreated} />
@@ -729,10 +1152,43 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
         <MiniCalendar monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />
       </GlassCard>
       <GlassCard className="xl:col-span-5">
-        <CardHeader icon={Clock3} title="이번 주 일정" />
+        <CardHeader icon={Clock3} title={scheduleTitle} action={false} />
+        <div className="space-y-3 border-b border-white/[0.06] p-5">
+          <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-slate-950/35 p-1">
+            {[
+              ["day", "요일 일정"],
+              ["week", "이번주 일정"],
+              ["month", "이번달 일정"],
+            ].map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setScheduleMode(mode)}
+                className={`rounded-md px-3 py-2 text-xs font-medium transition ${
+                  scheduleMode === mode
+                    ? "bg-cyan-300 text-slate-950"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {scheduleMode === "day" && (
+            <label className="block">
+              <span className="mb-2 block text-xs text-slate-500">확인할 날짜</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+              />
+            </label>
+          )}
+        </div>
         <AgendaList
-          events={calendarEvents.week}
-          emptyMessage={status === "authenticated" ? "이번 주 예정된 Google Calendar 일정이 없습니다." : "Google 계정을 연결하면 이번 주 일정을 볼 수 있어요."}
+          events={selectedEvents}
+          emptyMessage={emptyMessage}
         />
         <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
@@ -931,7 +1387,7 @@ function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
   );
 }
 
-function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCreated }) {
+function AssistantView({ assistantInput, setAssistantInput, status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated }) {
   const [chatMessages, setChatMessages] = useState(aiMessages);
   const [pendingEvent, setPendingEvent] = useState(null);
   const [assistantStatus, setAssistantStatus] = useState("idle");
@@ -940,37 +1396,90 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
     setChatMessages((messages) => [...messages, { id: Date.now() + Math.random(), role, text }]);
   }
 
-  async function handleAssistantSubmit(event) {
-    event.preventDefault();
+  async function runAssistantCommand(rawInput) {
     const input = assistantInput.trim();
-    if (!input) return;
+    const command = rawInput?.trim() || input;
+    if (!command) return;
 
-    addChatMessage("user", input);
+    addChatMessage("user", command);
     setAssistantInput("");
-
-    if (status !== "authenticated") {
-      setPendingEvent(null);
-      addChatMessage("assistant", "Google 계정을 연결하면 AI 비서가 일정을 추가할 수 있어요.");
-      return;
-    }
-
+    setPendingEvent(null);
     setAssistantStatus("loading");
 
     try {
+      const intent = getAssistantIntent(command);
+
+      if (intent === "app_open") {
+        const shortcut = findAssistantShortcut(command);
+        if (!shortcut) {
+          addChatMessage("assistant", "해당 바로가기를 찾지 못했어요. 앱 바로가기 목록을 확인해주세요.");
+          return;
+        }
+        window.open(shortcut.href, "_blank", "noopener,noreferrer");
+        addChatMessage("assistant", `${shortcut.name}을 새 탭으로 열었어요.`);
+        return;
+      }
+
+      if (intent === "calendar_summary") {
+        addChatMessage("assistant", summarizeCalendar(command, calendarEvents));
+        return;
+      }
+
+      if (intent === "drive_summary") {
+        addChatMessage("assistant", summarizeDriveFiles(driveFilesData));
+        return;
+      }
+
+      if (intent === "task_create") {
+        const title = extractTaskTitle(command);
+        if (!title) {
+          addChatMessage("assistant", "추가할 할 일 내용을 다시 알려주세요.");
+          return;
+        }
+        await onTaskCreated(title);
+        addChatMessage("assistant", `좋아요. 할 일에 '${title}'을 추가했어요.`);
+        return;
+      }
+
+      if (intent === "note_create") {
+        const note = extractNoteDraft(command);
+        if (!note.body) {
+          addChatMessage("assistant", "메모에 적을 내용을 다시 알려주세요.");
+          return;
+        }
+        await onNoteCreated(note);
+        addChatMessage("assistant", `좋아요. '${note.title}' 메모를 추가했어요.`);
+        return;
+      }
+
+      if (intent !== "calendar_create") {
+        addChatMessage(
+          "assistant",
+          "이렇게 말해보세요: '오늘 일정 요약해줘', '최근 드라이브 파일 정리해줘', '할 일에 과제 제출 추가해줘', '인스타 열어줘'.",
+        );
+        return;
+      }
+
+      if (status !== "authenticated") {
+        addChatMessage("assistant", "Google 계정 연결이 필요해요. 계정을 연결하면 일정을 추가할 수 있어요.");
+        return;
+      }
+
       const response = await fetch("/api/assistant/parse", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input: command }),
       });
-      const parsedEvent = await response.json();
+      const { data: parsedEvent, text } = await readApiResponse(response);
 
-      if (!response.ok || parsedEvent.intent !== "create_calendar_event") {
+      if (!response.ok || parsedEvent?.intent !== "create_calendar_event") {
         setPendingEvent(null);
         addChatMessage(
           "assistant",
-          parsedEvent.message || "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요.",
+          parsedEvent?.message ||
+            getApiErrorMessage(response, parsedEvent, text, "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요."),
         );
         return;
       }
@@ -986,6 +1495,11 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
     } finally {
       setAssistantStatus("idle");
     }
+  }
+
+  async function handleAssistantSubmit(event) {
+    event.preventDefault();
+    await runAssistantCommand();
   }
 
   async function confirmCalendarEvent() {
@@ -1006,17 +1520,17 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
           description: pendingEvent.description,
         }),
       });
-      const data = await response.json();
+      const { data, text } = await readApiResponse(response);
 
       if (!response.ok) {
-        throw new Error(data.error || "일정 추가에 실패했습니다.");
+        throw new Error(getApiErrorMessage(response, data, text, "일정 추가에 실패했습니다."));
       }
 
-      addChatMessage("assistant", data.message || "일정이 Google Calendar에 추가되었습니다.");
+      addChatMessage("assistant", data?.message || "일정이 Google Calendar에 추가되었습니다.");
       setPendingEvent(null);
       await onCalendarCreated();
     } catch (error) {
-      addChatMessage("assistant", error.message || "일정 추가 중 오류가 발생했습니다.");
+      addChatMessage("assistant", getCalendarCreateErrorMessage(error));
     } finally {
       setAssistantStatus("idle");
     }
@@ -1086,7 +1600,13 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
         <CardHeader icon={Sparkles} title="예시 명령어" action={false} />
         <div className="space-y-3 p-5">
           {aiSuggestions.map((suggestion) => (
-            <button key={suggestion} type="button" onClick={() => setAssistantInput(suggestion)} className="w-full rounded-lg border border-white/10 bg-white/[0.035] p-4 text-left text-sm text-slate-300 transition hover:border-cyan-300/30 hover:bg-white/[0.07] hover:text-white">
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => runAssistantCommand(suggestion)}
+              disabled={assistantStatus === "loading"}
+              className="w-full rounded-lg border border-white/10 bg-white/[0.035] p-4 text-left text-sm text-slate-300 transition hover:border-cyan-300/30 hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
               {suggestion}
             </button>
           ))}
@@ -1096,8 +1616,23 @@ function AssistantView({ assistantInput, setAssistantInput, status, onCalendarCr
   );
 }
 
-function SettingsView({ session, status }) {
+function SettingsView({ session, status, onLogout, themeMode, onThemeChange, calendarStatus, driveStatus }) {
   const isConnected = status === "authenticated";
+  const hasAccessToken = Boolean(session?.accessToken);
+  const user = session?.user;
+  const selectedTheme = themeOptions.find((theme) => theme.key === themeMode) || themeOptions[0];
+  const calendarIntegration = getGoogleIntegrationStatus({
+    isConnected,
+    hasAccessToken,
+    serviceStatus: calendarStatus,
+    serviceName: "캘린더",
+  });
+  const driveIntegration = getGoogleIntegrationStatus({
+    isConnected,
+    hasAccessToken,
+    serviceStatus: driveStatus,
+    serviceName: "드라이브",
+  });
 
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -1105,32 +1640,90 @@ function SettingsView({ session, status }) {
         <div className="p-5">
           <CardHeader icon={Link} title="Google 계정 연결" action={false} />
           <div className="pt-5">
-            <GoogleAccountPanel session={session} status={status} />
+            <GoogleAccountPanel session={session} status={status} onLogout={onLogout} />
           </div>
         </div>
       </GlassCard>
 
-      {settingsCards.map((card) => {
-        const Icon = card.icon;
-        return (
-          <GlassCard key={card.title}>
-            <div className="p-5">
-              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-                <Icon className="h-5 w-5" />
-              </div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{card.title}</p>
-              <h3 className="mt-2 text-lg font-semibold text-white">{card.value}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{card.helper}</p>
+      <GlassCard>
+        <div className="p-5">
+          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+            {user?.image ? (
+              <img src={user.image} alt="" className="h-9 w-9 rounded-md object-cover" />
+            ) : (
+              <User className="h-5 w-5" />
+            )}
+          </div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">프로필</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">{user?.name || "방문자"}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{user?.email || "Google 계정을 연결하면 이메일이 표시됩니다."}</p>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="md:col-span-1 xl:col-span-2">
+        <div className="p-5">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+              <Palette className="h-5 w-5" />
             </div>
-          </GlassCard>
-        );
-      })}
+            <span className="rounded-lg border border-white/10 bg-white/[0.045] px-3 py-1 text-xs text-slate-400">{selectedTheme.name}</span>
+          </div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">테마</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">테마 모드</h3>
+          <div className="mt-4 grid gap-2">
+            {themeOptions.map((theme) => {
+              const Icon = theme.icon;
+              const isActive = themeMode === theme.key;
+              return (
+                <button
+                  key={theme.key}
+                  type="button"
+                  onClick={() => onThemeChange(theme.key)}
+                  className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${
+                    isActive
+                      ? "border-cyan-300/40 bg-cyan-300/10 text-white"
+                      : "border-white/10 bg-slate-950/30 text-slate-300 hover:border-cyan-300/25 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-cyan-200" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{theme.name}</span>
+                    <span className="mt-1 block text-xs text-slate-500">{theme.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <div className="p-5">
+          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+            <CalendarDays className="h-5 w-5" />
+          </div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Google 캘린더</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">{calendarIntegration.value}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{calendarIntegration.helper}</p>
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <div className="p-5">
+          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+            <Cloud className="h-5 w-5" />
+          </div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Google 드라이브</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">{driveIntegration.value}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{driveIntegration.helper}</p>
+        </div>
+      </GlassCard>
       <GlassCard className="md:col-span-2 xl:col-span-4">
         <div className="grid gap-4 p-5 md:grid-cols-3">
           {[
-            { label: "테마 모드", value: "다크", icon: Moon },
-            { label: "캘린더 연결", value: isConnected ? "계정 연결됨" : "계정 연결 필요", icon: Link },
-            { label: "드라이브 연결", value: isConnected ? "계정 연결됨" : "계정 연결 필요", icon: HardDrive },
+            { label: "테마 모드", value: selectedTheme.name, icon: selectedTheme.icon },
+            { label: "캘린더 연결", value: calendarIntegration.value, icon: Link },
+            { label: "드라이브 연결", value: driveIntegration.value, icon: HardDrive },
           ].map((item) => {
             const Icon = item.icon;
             return (
@@ -1175,14 +1768,28 @@ export default function Home() {
   const [noteDraft, setNoteDraft] = useState({ title: "", body: "", tag: "개인" });
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState("");
+  const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
-  const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [] });
+  const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [] });
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("local");
   const userEmail = session?.user?.email || null;
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem(THEME_KEY);
+    if (themeOptions.some((theme) => theme.key === storedTheme)) {
+      setThemeMode(storedTheme);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(THEME_KEY, themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -1239,6 +1846,19 @@ export default function Home() {
     if (storageReady) window.localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   }, [storageReady, notes]);
 
+  function loadCachedCalendarEvents() {
+    const cachedEvents = loadStoredItems(CALENDAR_EVENTS_KEY, { today: [], week: [], month: [] });
+    return {
+      today: cachedEvents.today || [],
+      week: cachedEvents.week || [],
+      month: cachedEvents.month || cachedEvents.week || [],
+    };
+  }
+
+  function loadCachedDriveFiles() {
+    return loadStoredItems(DRIVE_FILES_KEY, []);
+  }
+
   async function loadCalendarEvents(signal) {
     setCalendarStatus("loading");
 
@@ -1249,25 +1869,36 @@ export default function Home() {
       });
 
       if (response.status === 401) {
-        setCalendarEvents({ today: [], week: [] });
-        setCalendarStatus("idle");
+        const cachedEvents = loadCachedCalendarEvents();
+        setCalendarEvents(cachedEvents);
+        setCalendarStatus("reauth");
         return;
       }
 
+      const { data, text } = await readApiResponse(response);
+
       if (!response.ok) {
-        throw new Error("Calendar API request failed");
+        throw new Error(getApiErrorMessage(response, data, text, "Calendar API request failed"));
       }
 
-      const data = await response.json();
-      setCalendarEvents({
-        today: data.today || [],
-        week: data.week || [],
-      });
+      const nextCalendarEvents = {
+        today: data?.today || [],
+        week: data?.week || [],
+        month: data?.month || data?.week || [],
+      };
+      setCalendarEvents(nextCalendarEvents);
+      window.localStorage.setItem(CALENDAR_EVENTS_KEY, JSON.stringify(nextCalendarEvents));
       setCalendarStatus("ready");
     } catch (error) {
       if (error.name === "AbortError") return;
-      setCalendarEvents({ today: agendaItems, week: agendaItems });
-      setCalendarStatus("fallback");
+      const cachedEvents = loadCachedCalendarEvents();
+      if (cachedEvents.today.length || cachedEvents.week.length || cachedEvents.month.length) {
+        setCalendarEvents(cachedEvents);
+        setCalendarStatus("ready");
+      } else {
+        setCalendarEvents({ today: agendaItems, week: agendaItems, month: agendaItems });
+        setCalendarStatus("fallback");
+      }
     }
   }
 
@@ -1275,8 +1906,9 @@ export default function Home() {
     if (status === "loading") return;
 
     if (status !== "authenticated") {
-      setCalendarEvents({ today: [], week: [] });
-      setCalendarStatus("idle");
+      const cachedEvents = loadCachedCalendarEvents();
+      setCalendarEvents(cachedEvents);
+      setCalendarStatus(cachedEvents.today.length || cachedEvents.week.length || cachedEvents.month.length ? "ready" : "idle");
       return;
     }
 
@@ -1290,8 +1922,9 @@ export default function Home() {
     if (status === "loading") return;
 
     if (status !== "authenticated") {
-      setDriveFilesData([]);
-      setDriveStatus("idle");
+      const cachedFiles = loadCachedDriveFiles();
+      setDriveFilesData(cachedFiles);
+      setDriveStatus(cachedFiles.length ? "ready" : "idle");
       return;
     }
 
@@ -1307,22 +1940,32 @@ export default function Home() {
         });
 
         if (response.status === 401) {
-          setDriveFilesData([]);
-          setDriveStatus("idle");
+          const cachedFiles = loadCachedDriveFiles();
+          setDriveFilesData(cachedFiles);
+          setDriveStatus("reauth");
           return;
         }
 
+        const { data, text } = await readApiResponse(response);
+
         if (!response.ok) {
-          throw new Error("Drive API request failed");
+          throw new Error(getApiErrorMessage(response, data, text, "Drive API request failed"));
         }
 
-        const data = await response.json();
-        setDriveFilesData(data.files || []);
+        const nextDriveFiles = data?.files || [];
+        setDriveFilesData(nextDriveFiles);
+        window.localStorage.setItem(DRIVE_FILES_KEY, JSON.stringify(nextDriveFiles));
         setDriveStatus("ready");
       } catch (error) {
         if (error.name === "AbortError") return;
-        setDriveFilesData(driveFiles);
-        setDriveStatus("fallback");
+        const cachedFiles = loadCachedDriveFiles();
+        if (cachedFiles.length) {
+          setDriveFilesData(cachedFiles);
+          setDriveStatus("ready");
+        } else {
+          setDriveFilesData(driveFiles);
+          setDriveStatus("fallback");
+        }
       }
     }
 
@@ -1346,15 +1989,147 @@ export default function Home() {
   const monthDays = Array.from({ length: 30 }, (_, index) => index + 1);
   const markedDays = [4, 9, 14, 18, 24, 28];
   const currentDay = Math.min(new Date().getDate(), 30);
+  const searchResults = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    const items = [
+      ...sidebarItems.map((item) => ({
+        id: `view-${item.key}`,
+        title: item.label,
+        helper: "워크스페이스 화면으로 이동",
+        type: "화면",
+        view: item.key,
+        searchText: `${item.label} ${item.key}`,
+      })),
+      ...quickLaunchApps.map((app) => ({
+        id: `app-${app.name}`,
+        title: app.name,
+        helper: app.description,
+        type: "바로가기",
+        href: app.href,
+        searchText: `${app.name} ${app.description}`,
+      })),
+      ...tasks.map((task) => ({
+        id: `task-${task.id}`,
+        title: task.title,
+        helper: task.completed ? "완료된 할 일" : "진행 중인 할 일",
+        type: "할 일",
+        view: "Tasks",
+        searchText: `${task.title} ${task.priority || ""}`,
+      })),
+      ...notes.map((note) => ({
+        id: `note-${note.id}`,
+        title: note.title,
+        helper: note.body,
+        type: "메모",
+        view: "Notes",
+        searchText: `${note.title} ${note.body} ${note.tag || ""}`,
+      })),
+      ...calendarEvents.week.map((event) => ({
+        id: `event-${event.id}`,
+        title: event.title,
+        helper: `${event.time || ""} ${event.place || ""}`,
+        type: "일정",
+        view: "Calendar",
+        href: event.htmlLink,
+        searchText: `${event.title} ${event.time || ""} ${event.place || ""}`,
+      })),
+      ...driveFilesData.map((file) => ({
+        id: `drive-${file.id}`,
+        title: file.name,
+        helper: `${file.owner || "Google Drive"} · ${file.updated || ""}`,
+        type: "파일",
+        view: "Drive",
+        href: file.link,
+        searchText: `${file.name} ${file.owner || ""} ${file.mimeType || ""}`,
+      })),
+    ];
+
+    return items.filter((item) => item.searchText.toLowerCase().includes(query)).slice(0, 8);
+  }, [calendarEvents.week, driveFilesData, notes, searchQuery, tasks]);
+
+  const notifications = useMemo(() => {
+    const remainingTasks = tasks.filter((task) => !task.completed).length;
+    const todayEvents = calendarEvents.today.length;
+    const recentFiles = driveFilesData.length;
+
+    return [
+      {
+        id: "calendar",
+        title: todayEvents > 0 ? `오늘 일정 ${todayEvents}개` : "오늘 예정된 일정 없음",
+        message:
+          status === "authenticated"
+            ? calendarStatus === "fallback"
+              ? "Calendar 일정을 가져오지 못해 fallback 데이터를 표시 중입니다."
+              : "Google Calendar 상태를 확인했습니다."
+            : "Google 계정을 연결하면 오늘 일정을 볼 수 있습니다.",
+        dot: calendarStatus === "fallback" ? "bg-amber-300" : "bg-cyan-300",
+        view: "Calendar",
+      },
+      {
+        id: "tasks",
+        title: `남은 할 일 ${remainingTasks}개`,
+        message: remainingTasks > 0 ? "처리할 작업이 남아 있습니다." : "모든 할 일을 완료했습니다.",
+        dot: remainingTasks > 0 ? "bg-violet-300" : "bg-emerald-300",
+        view: "Tasks",
+      },
+      {
+        id: "drive",
+        title: recentFiles > 0 ? `최근 Drive 파일 ${recentFiles}개` : "Drive 파일 대기 중",
+        message:
+          status === "authenticated"
+            ? driveStatus === "fallback"
+              ? "Drive 파일을 가져오지 못해 fallback 데이터를 표시 중입니다."
+              : "최근 파일 목록을 확인했습니다."
+            : "Google 계정을 연결하면 Drive 파일을 볼 수 있습니다.",
+        dot: driveStatus === "fallback" ? "bg-amber-300" : "bg-lime-300",
+        view: "Drive",
+      },
+      {
+        id: "apps",
+        title: `앱 바로가기 ${quickLaunchApps.length}개`,
+        message: "자주 쓰는 외부 앱을 앱 바로가기 화면으로 옮겼습니다.",
+        dot: "bg-pink-300",
+        view: "Quick Launch",
+      },
+    ];
+  }, [calendarEvents.today.length, calendarStatus, driveFilesData.length, driveStatus, status, tasks]);
+
+  function openSearchResult(result) {
+    if (result.href) window.open(result.href, "_blank", "noopener,noreferrer");
+    if (result.view) setActiveView(result.view);
+    setSearchQuery("");
+    setIsSearchFocused(false);
+  }
+
+  function openNotification(notification) {
+    setActiveView(notification.view);
+    setNotificationsOpen(false);
+  }
+
+  async function handleLogout() {
+    window.localStorage.removeItem(CALENDAR_EVENTS_KEY);
+    window.localStorage.removeItem(DRIVE_FILES_KEY);
+    setCalendarEvents({ today: [], week: [], month: [] });
+    setDriveFilesData([]);
+    setCalendarStatus("idle");
+    setDriveStatus("idle");
+    await signOut();
+  }
 
   async function addTask(event) {
     event.preventDefault();
     const title = taskInput.trim();
     if (!title) return;
 
+    await createTaskFromTitle(title);
+    setTaskInput("");
+  }
+
+  async function createTaskFromTitle(title) {
     const localTask = { id: `local-${Date.now()}`, title, completed: false, priority: "보통" };
     setTasks((currentTasks) => [localTask, ...currentTasks]);
-    setTaskInput("");
 
     if (workspaceStorageMode === "supabase" && userEmail) {
       try {
@@ -1426,23 +2201,27 @@ export default function Home() {
       }
       setEditingNoteId(null);
     } else {
-      const localNote = { id: `local-${Date.now()}`, title, body, tag };
-      setNotes((currentNotes) => [localNote, ...currentNotes]);
-
-      if (workspaceStorageMode === "supabase" && userEmail) {
-        try {
-          const savedNote = await createNoteInSupabase(userEmail, localNote);
-          setNotes((currentNotes) =>
-            currentNotes.map((note) => (note.id === localNote.id ? savedNote : note)),
-          );
-        } catch (error) {
-          console.warn("Supabase note create failed, keeping localStorage fallback:", error);
-          setWorkspaceStorageMode("local");
-        }
-      }
+      await createNoteFromDraft({ title, body, tag });
     }
 
     setNoteDraft({ title: "", body: "", tag: "개인" });
+  }
+
+  async function createNoteFromDraft({ title, body, tag = "개인" }) {
+    const localNote = { id: `local-${Date.now()}`, title, body, tag };
+    setNotes((currentNotes) => [localNote, ...currentNotes]);
+
+    if (workspaceStorageMode === "supabase" && userEmail) {
+      try {
+        const savedNote = await createNoteInSupabase(userEmail, localNote);
+        setNotes((currentNotes) =>
+          currentNotes.map((note) => (note.id === localNote.id ? savedNote : note)),
+        );
+      } catch (error) {
+        console.warn("Supabase note create failed, keeping localStorage fallback:", error);
+        setWorkspaceStorageMode("local");
+      }
+    }
   }
 
   async function deleteNote(noteId) {
@@ -1479,6 +2258,7 @@ export default function Home() {
         calendarStatus={calendarStatus}
         driveFilesData={driveFilesData}
         driveStatus={driveStatus}
+        onLogout={handleLogout}
       />
     ),
     Calendar: (
@@ -1520,16 +2300,31 @@ export default function Home() {
         assistantInput={assistantInput}
         setAssistantInput={setAssistantInput}
         status={status}
+        calendarEvents={calendarEvents}
+        driveFilesData={driveFilesData}
         onCalendarCreated={() => loadCalendarEvents()}
+        onTaskCreated={createTaskFromTitle}
+        onNoteCreated={createNoteFromDraft}
       />
     ),
-    Settings: <SettingsView session={session} status={status} />,
+    "Quick Launch": <QuickLaunchView />,
+    Settings: (
+      <SettingsView
+        session={session}
+        status={status}
+        onLogout={handleLogout}
+        themeMode={themeMode}
+        onThemeChange={setThemeMode}
+        calendarStatus={calendarStatus}
+        driveStatus={driveStatus}
+      />
+    ),
   };
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050812] text-slate-200">
-      <div className="fixed inset-0 bg-[linear-gradient(135deg,rgba(56,189,248,0.14),transparent_26%,rgba(124,58,237,0.12)_58%,transparent_82%)]" />
-      <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:48px_48px] opacity-20" />
+    <main className={`workspace-shell theme-${themeMode} min-h-screen overflow-hidden bg-[var(--workspace-bg)] text-slate-200`}>
+      <div className="fixed inset-0 bg-[var(--workspace-ambient)]" />
+      <div className="fixed inset-0 bg-[var(--workspace-grid)] bg-[size:48px_48px] opacity-20" />
 
       <div className="relative flex min-h-screen">
         <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-slate-950/60 backdrop-blur-xl lg:flex lg:flex-col">
@@ -1587,24 +2382,62 @@ export default function Home() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="relative block sm:w-80">
+              <div className="relative block sm:w-80">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="메모, 파일, 일정을 검색하세요..."
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.055] py-3 pl-10 pr-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-cyan-300/15"
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setIsSearchFocused(true);
+                  }}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && searchResults[0]) {
+                      event.preventDefault();
+                      openSearchResult(searchResults[0]);
+                    }
+                    if (event.key === "Escape") {
+                      setSearchQuery("");
+                      setIsSearchFocused(false);
+                    }
+                  }}
+                  placeholder="메모, 파일, 일정, 앱을 검색하세요..."
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.055] py-3 pl-10 pr-10 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-cyan-300/15"
                 />
-              </label>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    aria-label="검색어 지우기"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setIsSearchFocused(false);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+                {isSearchFocused && searchQuery.trim() && (
+                  <SearchResultsPanel results={searchResults} onSelect={openSearchResult} />
+                )}
+              </div>
               <div className="flex items-center gap-2">
-                <button type="button" aria-label="알림" className="relative rounded-lg border border-white/10 bg-white/[0.045] p-3 text-slate-300 transition hover:border-cyan-300/30 hover:text-white">
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-cyan-300" />
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-label="알림"
+                    onClick={() => setNotificationsOpen((isOpen) => !isOpen)}
+                    className="relative rounded-lg border border-white/10 bg-white/[0.045] p-3 text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
+                  >
+                    <Bell className="h-4 w-4" />
+                    <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-cyan-300" />
+                  </button>
+                  {notificationsOpen && <NotificationPanel notifications={notifications} onSelect={openNotification} />}
+                </div>
                 {status === "authenticated" ? (
                   <button
                     type="button"
-                    onClick={() => signOut()}
+                    onClick={handleLogout}
                     aria-label="Google 로그아웃"
                     className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.045] px-3 py-2.5 text-sm text-slate-200 transition hover:border-violet-300/30 hover:text-white"
                   >
