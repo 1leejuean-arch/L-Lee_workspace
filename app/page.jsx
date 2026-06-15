@@ -1009,7 +1009,11 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
           onRequestDelete={onRequestDriveDelete}
           deletingFileId={deletingDriveFileId}
         />
-        {driveDeleteMessage && <p className="px-5 pb-4 text-sm text-rose-200">{driveDeleteMessage}</p>}
+        {driveDeleteMessage && (
+          <p className={`px-5 pb-4 text-sm ${driveDeleteMessageType === "success" ? "text-emerald-200" : "text-rose-200"}`}>
+            {driveDeleteMessage}
+          </p>
+        )}
         <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
 
@@ -1339,7 +1343,7 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
   );
 }
 
-function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId, deleteMessage }) {
+function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId, deleteMessage, deleteMessageType }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-8">
@@ -1351,7 +1355,11 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
           onRequestDelete={onRequestDelete}
           deletingFileId={deletingFileId}
         />
-        {deleteMessage && <p className="px-5 pb-4 text-sm text-rose-200">{deleteMessage}</p>}
+        {deleteMessage && (
+          <p className={`px-5 pb-4 text-sm ${deleteMessageType === "success" ? "text-emerald-200" : "text-rose-200"}`}>
+            {deleteMessage}
+          </p>
+        )}
         <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
       <GlassCard className="xl:col-span-4">
@@ -1923,6 +1931,7 @@ export default function Home() {
   const [driveFileToDelete, setDriveFileToDelete] = useState(null);
   const [deletingDriveFileId, setDeletingDriveFileId] = useState(null);
   const [driveDeleteMessage, setDriveDeleteMessage] = useState("");
+  const [driveDeleteMessageType, setDriveDeleteMessageType] = useState("error");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("local");
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const userEmail = session?.user?.email || null;
@@ -2401,6 +2410,7 @@ export default function Home() {
 
     setDeletingDriveFileId(driveFileToDelete.id);
     setDriveDeleteMessage("");
+    setDriveDeleteMessageType("error");
 
     try {
       const response = await fetch("/api/drive/delete", {
@@ -2416,11 +2426,18 @@ export default function Home() {
         throw new Error(getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
       }
 
+      if (!data?.ok || data?.deletedFileId !== driveFileToDelete.id) {
+        throw new Error("파일 삭제 응답을 확인하지 못했습니다.");
+      }
+
       const nextFiles = driveFilesData.filter((file) => file.id !== driveFileToDelete.id);
       setDriveFilesData(nextFiles);
       window.localStorage.setItem(DRIVE_FILES_KEY, JSON.stringify(nextFiles));
       setDriveFileToDelete(null);
+      setDriveDeleteMessageType("success");
+      setDriveDeleteMessage("파일을 삭제했어요.");
     } catch (error) {
+      setDriveDeleteMessageType("error");
       setDriveDeleteMessage(error.message || "파일을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setDeletingDriveFileId(null);
@@ -2448,6 +2465,7 @@ export default function Home() {
         onLogout={handleLogout}
         onRequestDriveDelete={(file) => {
           setDriveDeleteMessage("");
+          setDriveDeleteMessageType("error");
           setDriveFileToDelete(file);
         }}
         deletingDriveFileId={deletingDriveFileId}
@@ -2472,10 +2490,12 @@ export default function Home() {
         status={status}
         onRequestDelete={(file) => {
           setDriveDeleteMessage("");
+          setDriveDeleteMessageType("error");
           setDriveFileToDelete(file);
         }}
         deletingFileId={deletingDriveFileId}
         deleteMessage={driveDeleteMessage}
+        deleteMessageType={driveDeleteMessageType}
       />
     ),
     Notes: (
@@ -2709,6 +2729,11 @@ export default function Home() {
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   <span className="font-medium text-slate-200">{driveFileToDelete.name}</span> 파일이 실제 Google Drive에서 삭제됩니다. 이 작업은 Google Drive에 반영됩니다.
                 </p>
+                {driveDeleteMessage && driveDeleteMessageType === "error" && (
+                  <p className="mt-3 rounded-lg border border-rose-300/20 bg-rose-400/10 p-3 text-sm leading-6 text-rose-100">
+                    {driveDeleteMessage}
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
