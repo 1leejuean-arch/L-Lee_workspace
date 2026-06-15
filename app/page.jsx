@@ -1759,6 +1759,13 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, driveFileTotal }) {
   );
 }
 
+function getTimeBasedGreeting(hour) {
+  if (hour >= 5 && hour < 12) return "좋은 아침이에요";
+  if (hour >= 12 && hour < 18) return "좋은 점심이에요";
+  if (hour >= 18 && hour < 23) return "좋은 저녁이에요";
+  return "좋은 밤이에요";
+}
+
 export default function Home() {
   const { data: session, status } = useSession();
   const [activeView, setActiveView] = useState("Dashboard");
@@ -1778,7 +1785,15 @@ export default function Home() {
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("local");
+  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const userEmail = session?.user?.email || null;
+
+  useEffect(() => {
+    const updateCurrentHour = () => setCurrentHour(new Date().getHours());
+    updateCurrentHour();
+    const intervalId = window.setInterval(updateCurrentHour, 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(THEME_KEY);
@@ -1986,6 +2001,7 @@ export default function Home() {
   const completedCount = tasks.filter((task) => task.completed).length;
   const signedInUser = session?.user;
   const displayName = signedInUser?.name || "주언";
+  const greetingText = getTimeBasedGreeting(currentHour);
   const monthDays = Array.from({ length: 30 }, (_, index) => index + 1);
   const markedDays = [4, 9, 14, 18, 24, 28];
   const currentDay = Math.min(new Date().getDate(), 30);
@@ -2376,7 +2392,7 @@ export default function Home() {
                 <Menu className="h-5 w-5" />
               </button>
               <div>
-                <h1 className="text-2xl font-semibold text-white">좋은 저녁이에요, {displayName}님</h1>
+                <h1 className="text-2xl font-semibold text-white">{greetingText}, {displayName}님</h1>
                 <p className="mt-1 text-sm text-slate-400">{todayLabel}</p>
               </div>
             </div>
