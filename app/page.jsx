@@ -2329,8 +2329,8 @@ export default function Home() {
       <div className="relative flex min-h-screen">
         <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-slate-950/60 backdrop-blur-xl lg:flex lg:flex-col">
           <div className="flex h-20 items-center gap-3 border-b border-white/10 px-6">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 shadow-lg shadow-cyan-500/20">
-              <Sparkles className="h-5 w-5 text-white" />
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-white/15 bg-white shadow-lg shadow-cyan-500/15">
+              <img src="/l-lee-icon.png" alt="L-Lee Workspace" className="h-full w-full object-cover" />
             </div>
             <div>
               <p className="text-sm font-semibold text-white">L-Lee Workspace</p>
