@@ -299,15 +299,111 @@ function getCalendarCreateErrorMessage(error) {
   return "일정을 추가하지 못했습니다. 잠시 후 다시 시도해주세요.";
 }
 
+async function executeWorkspaceAiCommand(command, context, options = {}) {
+  const { status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated } = context;
+  const { confirmCalendar = true } = options;
+  const intent = getAssistantIntent(command);
+
+  if (intent === "app_open") {
+    const shortcut = findAssistantShortcut(command);
+    if (!shortcut) {
+      return { message: "해당 바로가기를 찾지 못했어요. 앱 바로가기 목록을 확인해주세요." };
+    }
+
+    window.open(shortcut.href, "_blank", "noopener,noreferrer");
+    return { message: `${shortcut.name}을 새 탭으로 열었어요.` };
+  }
+
+  if (intent === "calendar_summary") {
+    return { message: summarizeCalendar(command, calendarEvents) };
+  }
+
+  if (intent === "drive_summary") {
+    return { message: summarizeDriveFiles(driveFilesData) };
+  }
+
+  if (intent === "task_create") {
+    const title = extractTaskTitle(command);
+    if (!title) return { message: "추가할 할 일 내용을 다시 알려주세요." };
+
+    await onTaskCreated(title);
+    return { message: `좋아요. 할 일에 '${title}'을 추가했어요.` };
+  }
+
+  if (intent === "note_create") {
+    const note = extractNoteDraft(command);
+    if (!note.body) return { message: "메모에 적을 내용을 다시 알려주세요." };
+
+    await onNoteCreated(note);
+    return { message: `좋아요. '${note.title}' 메모를 추가했어요.` };
+  }
+
+  if (intent !== "calendar_create") {
+    return {
+      message: "이렇게 말해보세요: '오늘 일정 요약해줘', '최근 드라이브 파일 정리해줘', '할 일에 과제 제출 추가해줘', '인스타 열어줘'.",
+    };
+  }
+
+  if (status !== "authenticated") {
+    return { message: "Google 계정 연결이 필요해요. 계정을 연결하면 일정을 추가할 수 있어요." };
+  }
+
+  const parseResponse = await fetch("/api/assistant/parse", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ input: command }),
+  });
+  const { data: parsedEvent, text: parseText } = await readApiResponse(parseResponse);
+
+  if (!parseResponse.ok || parsedEvent?.intent !== "create_calendar_event") {
+    return {
+      message:
+        parsedEvent?.message ||
+        getApiErrorMessage(parseResponse, parsedEvent, parseText, "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요."),
+    };
+  }
+
+  if (confirmCalendar) {
+    return {
+      pendingEvent: parsedEvent,
+      message: `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
+    };
+  }
+
+  const createResponse = await fetch("/api/calendar/create", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      title: parsedEvent.title,
+      date: parsedEvent.date,
+      startTime: parsedEvent.startTime,
+      endTime: parsedEvent.endTime,
+      description: parsedEvent.description,
+    }),
+  });
+  const { data, text } = await readApiResponse(createResponse);
+
+  if (!createResponse.ok) {
+    throw new Error(getApiErrorMessage(createResponse, data, text, "일정 추가에 실패했습니다."));
+  }
+
+  await onCalendarCreated();
+  return { message: data?.message || "좋아요. 일정을 추가했어요." };
+}
+
 const sidebarItems = [
   { key: "Dashboard", label: "대시보드", icon: LayoutDashboard },
   { key: "Calendar", label: "캘린더", icon: CalendarDays },
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
+  { key: "AI Assistant", label: "AI 비서", icon: Bot },
   { key: "Quick Launch", label: "앱 바로가기", icon: Link },
   { key: "Settings", label: "설정", icon: Settings },
-  { key: "AI Assistant", label: "AI 비서", icon: Bot },
 ];
 
 const agendaItems = [
@@ -1527,6 +1623,79 @@ function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
   );
 }
 
+function SidebarMiniAssistant({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
+  const [miniInput, setMiniInput] = useState("");
+  const [miniStatus, setMiniStatus] = useState("idle");
+  const [miniMessage, setMiniMessage] = useState("간단한 명령을 바로 실행해요.");
+
+  async function submitMiniAssistant(event) {
+    event.preventDefault();
+    const command = miniInput.trim();
+    if (!command || miniStatus === "loading") return;
+
+    setMiniStatus("loading");
+    setMiniMessage("처리 중이에요...");
+
+    try {
+      const result = await executeWorkspaceAiCommand(
+        command,
+        {
+          status,
+          calendarEvents,
+          driveFilesData,
+          onCalendarCreated,
+          onTaskCreated,
+          onNoteCreated,
+        },
+        { confirmCalendar: false },
+      );
+      setMiniMessage(result.message || "처리했어요.");
+      setMiniInput("");
+    } catch (error) {
+      setMiniMessage(getCalendarCreateErrorMessage(error));
+    } finally {
+      setMiniStatus("idle");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-cyan-300/15 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-cyan-300" />
+          <p className="text-xs font-semibold text-slate-100">미니 AI 비서</p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenFullAssistant}
+          className="rounded-md px-2 py-1 text-[11px] text-cyan-200 transition hover:bg-white/10 hover:text-white"
+        >
+          전체
+        </button>
+      </div>
+      <p className="mt-2 line-clamp-3 rounded-lg border border-white/10 bg-slate-950/35 p-2 text-[11px] leading-5 text-slate-300">
+        {miniMessage}
+      </p>
+      <form onSubmit={submitMiniAssistant} className="mt-3 flex gap-2">
+        <input
+          value={miniInput}
+          onChange={(event) => setMiniInput(event.target.value)}
+          placeholder="AI에게 바로 요청..."
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+        />
+        <button
+          type="submit"
+          disabled={!miniInput.trim() || miniStatus === "loading"}
+          aria-label="미니 AI 전송"
+          className="rounded-lg bg-cyan-300 px-3 text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {miniStatus === "loading" ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function AssistantView({ assistantInput, setAssistantInput, status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated }) {
   const [chatMessages, setChatMessages] = useState(aiMessages);
   const [pendingEvent, setPendingEvent] = useState(null);
@@ -1547,88 +1716,20 @@ function AssistantView({ assistantInput, setAssistantInput, status, calendarEven
     setAssistantStatus("loading");
 
     try {
-      const intent = getAssistantIntent(command);
-
-      if (intent === "app_open") {
-        const shortcut = findAssistantShortcut(command);
-        if (!shortcut) {
-          addChatMessage("assistant", "해당 바로가기를 찾지 못했어요. 앱 바로가기 목록을 확인해주세요.");
-          return;
-        }
-        window.open(shortcut.href, "_blank", "noopener,noreferrer");
-        addChatMessage("assistant", `${shortcut.name}을 새 탭으로 열었어요.`);
-        return;
-      }
-
-      if (intent === "calendar_summary") {
-        addChatMessage("assistant", summarizeCalendar(command, calendarEvents));
-        return;
-      }
-
-      if (intent === "drive_summary") {
-        addChatMessage("assistant", summarizeDriveFiles(driveFilesData));
-        return;
-      }
-
-      if (intent === "task_create") {
-        const title = extractTaskTitle(command);
-        if (!title) {
-          addChatMessage("assistant", "추가할 할 일 내용을 다시 알려주세요.");
-          return;
-        }
-        await onTaskCreated(title);
-        addChatMessage("assistant", `좋아요. 할 일에 '${title}'을 추가했어요.`);
-        return;
-      }
-
-      if (intent === "note_create") {
-        const note = extractNoteDraft(command);
-        if (!note.body) {
-          addChatMessage("assistant", "메모에 적을 내용을 다시 알려주세요.");
-          return;
-        }
-        await onNoteCreated(note);
-        addChatMessage("assistant", `좋아요. '${note.title}' 메모를 추가했어요.`);
-        return;
-      }
-
-      if (intent !== "calendar_create") {
-        addChatMessage(
-          "assistant",
-          "이렇게 말해보세요: '오늘 일정 요약해줘', '최근 드라이브 파일 정리해줘', '할 일에 과제 제출 추가해줘', '인스타 열어줘'.",
-        );
-        return;
-      }
-
-      if (status !== "authenticated") {
-        addChatMessage("assistant", "Google 계정 연결이 필요해요. 계정을 연결하면 일정을 추가할 수 있어요.");
-        return;
-      }
-
-      const response = await fetch("/api/assistant/parse", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const result = await executeWorkspaceAiCommand(
+        command,
+        {
+          status,
+          calendarEvents,
+          driveFilesData,
+          onCalendarCreated,
+          onTaskCreated,
+          onNoteCreated,
         },
-        body: JSON.stringify({ input: command }),
-      });
-      const { data: parsedEvent, text } = await readApiResponse(response);
-
-      if (!response.ok || parsedEvent?.intent !== "create_calendar_event") {
-        setPendingEvent(null);
-        addChatMessage(
-          "assistant",
-          parsedEvent?.message ||
-            getApiErrorMessage(response, parsedEvent, text, "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요."),
-        );
-        return;
-      }
-
-      setPendingEvent(parsedEvent);
-      addChatMessage(
-        "assistant",
-        `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
+        { confirmCalendar: true },
       );
+      if (result.pendingEvent) setPendingEvent(result.pendingEvent);
+      addChatMessage("assistant", result.message);
     } catch (error) {
       setPendingEvent(null);
       addChatMessage("assistant", "일정 요청을 분석하지 못했어요. 예: 내일 오후 6시에 회의 예약해줘");
@@ -2578,7 +2679,16 @@ export default function Home() {
             })}
           </nav>
 
-          <div className="border-t border-white/10 p-4">
+          <div className="space-y-3 border-t border-white/10 p-4">
+            <SidebarMiniAssistant
+              status={status}
+              calendarEvents={calendarEvents}
+              driveFilesData={driveFilesData}
+              onCalendarCreated={() => loadCalendarEvents()}
+              onTaskCreated={createTaskFromTitle}
+              onNoteCreated={createNoteFromDraft}
+              onOpenFullAssistant={() => setActiveView("AI Assistant")}
+            />
             <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs font-medium text-slate-300">워크스페이스 상태</p>
               <div className="mt-3 h-2 rounded-full bg-slate-800">
