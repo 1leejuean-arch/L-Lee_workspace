@@ -452,14 +452,15 @@ function GlassCard({ children, className = "" }) {
   );
 }
 
-function CardHeader({ icon: Icon, title, action = true }) {
+function CardHeader({ icon: Icon, title, action = true, actionContent = null }) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
       <div className="flex items-center gap-3">
         <Icon className="h-5 w-5 text-cyan-300" />
         <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
       </div>
-      {action && (
+      {actionContent}
+      {action && !actionContent && (
         <button type="button" aria-label={`${title} 옵션`} className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white">
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -565,11 +566,16 @@ function ViewTitle({ activeView }) {
 }
 
 function MiniCalendar({ monthDays, markedDays, currentDay }) {
+  const monthLabel = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+  }).format(new Date());
+
   return (
     <div className="p-5">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <p className="text-lg font-semibold text-white">2026년 6월</p>
+          <p className="text-lg font-semibold text-white">{monthLabel}</p>
           <p className="text-xs text-slate-500">목업 캘린더 보기</p>
         </div>
         <span className="rounded-lg bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">오늘</span>
@@ -633,7 +639,7 @@ function getFileIcon(type) {
   return File;
 }
 
-function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "표시할 파일이 없습니다." }) {
+function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "표시할 파일이 없습니다.", onRequestDelete, deletingFileId }) {
   if (files.length === 0) {
     return <p className="p-5 text-sm text-slate-500">{emptyMessage}</p>;
   }
@@ -663,21 +669,29 @@ function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "�
         );
 
         return (
-          file.link ? (
-            <a
-              key={file.id}
-              href={file.link}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]"
-            >
-              {content}
-            </a>
-          ) : (
-            <article key={file.id} className="flex items-center gap-4 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]">
-              {content}
-            </article>
-          )
+          <article key={file.id} className="flex items-center gap-3 rounded-lg border border-transparent p-3 transition hover:border-white/10 hover:bg-white/[0.05]">
+            {file.link ? (
+              <a
+                href={file.link}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 flex-1 items-center gap-4"
+              >
+                {content}
+              </a>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-center gap-4">{content}</div>
+            )}
+            {onRequestDelete && (
+              <IconButton
+                label={`${file.name} Google Drive에서 삭제`}
+                onClick={() => onRequestDelete(file)}
+                tone="danger"
+              >
+                {deletingFileId === file.id ? <Clock3 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              </IconButton>
+            )}
+          </article>
         );
       })}
     </div>
@@ -919,7 +933,17 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage }) {
+  const [scheduleRange, setScheduleRange] = useState("today");
+  const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
+  const scheduleOptions = [
+    { key: "today", label: "오늘의 일정" },
+    { key: "week", label: "이번 주 일정" },
+    { key: "month", label: "이번 달 일정" },
+  ];
+  const selectedSchedule = scheduleOptions.find((option) => option.key === scheduleRange) || scheduleOptions[0];
+  const selectedScheduleEvents = getDashboardScheduleEvents(calendarEvents, scheduleRange);
+
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-12">
@@ -929,11 +953,45 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
       </GlassCard>
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
-        <CardHeader icon={CalendarDays} title="오늘의 일정" />
+        <CardHeader
+          icon={CalendarDays}
+          title={selectedSchedule.label}
+          actionContent={
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="일정 범위 선택"
+                onClick={() => setScheduleMenuOpen((isOpen) => !isOpen)}
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {scheduleMenuOpen && (
+                <div className="absolute right-0 top-10 z-20 w-36 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 p-1 shadow-2xl shadow-black/30 backdrop-blur-xl">
+                  {scheduleOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => {
+                        setScheduleRange(option.key);
+                        setScheduleMenuOpen(false);
+                      }}
+                      className={`block w-full rounded-md px-3 py-2 text-left text-xs transition ${
+                        scheduleRange === option.key ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          }
+        />
         <AgendaList
-          events={calendarEvents.today}
+          events={selectedScheduleEvents}
           compact
-          emptyMessage={status === "authenticated" ? "오늘 예정된 Google Calendar 일정이 없습니다." : "Google 계정을 연결하면 오늘 일정을 볼 수 있어요."}
+          emptyMessage={getScheduleEmptyMessage(scheduleRange, status)}
         />
         <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
@@ -948,7 +1006,10 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
         <DriveFileList
           files={driveFilesData}
           emptyMessage={status === "authenticated" ? "최근 수정된 Google Drive 파일이 없습니다." : "Google 계정을 연결하면 Drive 파일을 볼 수 있어요."}
+          onRequestDelete={onRequestDriveDelete}
+          deletingFileId={deletingDriveFileId}
         />
+        {driveDeleteMessage && <p className="px-5 pb-4 text-sm text-rose-200">{driveDeleteMessage}</p>}
         <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
 
@@ -1108,11 +1169,83 @@ function getDateInputValue(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function getEventDateKey(event) {
-  if (!event?.start) return "";
+function getLocalEventDate(event) {
+  if (!event?.start) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(event.start)) {
+    return new Date(`${event.start}T00:00:00`);
+  }
+
   const date = new Date(event.start);
-  if (Number.isNaN(date.getTime())) return "";
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getEventDateKey(event) {
+  const date = getLocalEventDate(event);
+  if (!date) return "";
   return getDateInputValue(date);
+}
+
+function isSameLocalDay(date, target) {
+  return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth() && date.getDate() === target.getDate();
+}
+
+function getLocalWeekRange(date = new Date()) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+}
+
+function getDashboardScheduleEvents(calendarEvents, range) {
+  const monthEvents = calendarEvents.month || [];
+  const now = new Date();
+
+  if (range === "today") {
+    return monthEvents.filter((event) => {
+      const eventDate = getLocalEventDate(event);
+      return eventDate ? isSameLocalDay(eventDate, now) : false;
+    });
+  }
+
+  if (range === "week") {
+    const { start, end } = getLocalWeekRange(now);
+    return monthEvents.filter((event) => {
+      const eventDate = getLocalEventDate(event);
+      return eventDate ? eventDate >= start && eventDate <= end : false;
+    });
+  }
+
+  return monthEvents.filter((event) => {
+    const eventDate = getLocalEventDate(event);
+    return eventDate ? eventDate.getFullYear() === now.getFullYear() && eventDate.getMonth() === now.getMonth() : false;
+  });
+}
+
+function getScheduleEmptyMessage(range, status) {
+  if (status !== "authenticated") return "Google 계정을 연결하면 일정을 볼 수 있어요.";
+  if (range === "week") return "이번 주 예정된 일정이 없습니다.";
+  if (range === "month") return "이번 달 예정된 일정이 없습니다.";
+  return "오늘 예정된 일정이 없습니다.";
+}
+
+function getCalendarMarkedDays(calendarEvents, visibleDate = new Date()) {
+  const markedDays = new Set();
+  const monthEvents = calendarEvents.month || [];
+
+  monthEvents.forEach((event) => {
+    const eventDate = getLocalEventDate(event);
+    if (!eventDate) return;
+    if (eventDate.getFullYear() === visibleDate.getFullYear() && eventDate.getMonth() === visibleDate.getMonth()) {
+      markedDays.add(eventDate.getDate());
+    }
+  });
+
+  return Array.from(markedDays);
 }
 
 function getCalendarScopeLabel(mode, selectedDate) {
@@ -1206,7 +1339,7 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
   );
 }
 
-function DriveView({ files, driveStatus, status }) {
+function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId, deleteMessage }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-8">
@@ -1215,7 +1348,10 @@ function DriveView({ files, driveStatus, status }) {
           files={files}
           detailed
           emptyMessage={status === "authenticated" ? "최근 수정된 Google Drive 파일이 없습니다." : "Google 계정을 연결하면 Drive 파일을 볼 수 있어요."}
+          onRequestDelete={onRequestDelete}
+          deletingFileId={deletingFileId}
         />
+        {deleteMessage && <p className="px-5 pb-4 text-sm text-rose-200">{deleteMessage}</p>}
         <DriveStatusNotice status={status} driveStatus={driveStatus} />
       </GlassCard>
       <GlassCard className="xl:col-span-4">
@@ -1784,6 +1920,9 @@ export default function Home() {
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
+  const [driveFileToDelete, setDriveFileToDelete] = useState(null);
+  const [deletingDriveFileId, setDeletingDriveFileId] = useState(null);
+  const [driveDeleteMessage, setDriveDeleteMessage] = useState("");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("local");
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const userEmail = session?.user?.email || null;
@@ -2002,9 +2141,10 @@ export default function Home() {
   const signedInUser = session?.user;
   const displayName = signedInUser?.name || "주언";
   const greetingText = getTimeBasedGreeting(currentHour);
-  const monthDays = Array.from({ length: 30 }, (_, index) => index + 1);
-  const markedDays = [4, 9, 14, 18, 24, 28];
-  const currentDay = Math.min(new Date().getDate(), 30);
+  const currentMonthLength = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const monthDays = Array.from({ length: currentMonthLength }, (_, index) => index + 1);
+  const currentDay = new Date().getDate();
+  const markedDays = useMemo(() => getCalendarMarkedDays(calendarEvents), [calendarEvents]);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -2256,6 +2396,37 @@ export default function Home() {
     }
   }
 
+  async function confirmDriveFileDelete() {
+    if (!driveFileToDelete?.id) return;
+
+    setDeletingDriveFileId(driveFileToDelete.id);
+    setDriveDeleteMessage("");
+
+    try {
+      const response = await fetch("/api/drive/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileId: driveFileToDelete.id }),
+      });
+      const { data, text } = await readApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
+      }
+
+      const nextFiles = driveFilesData.filter((file) => file.id !== driveFileToDelete.id);
+      setDriveFilesData(nextFiles);
+      window.localStorage.setItem(DRIVE_FILES_KEY, JSON.stringify(nextFiles));
+      setDriveFileToDelete(null);
+    } catch (error) {
+      setDriveDeleteMessage(error.message || "파일을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setDeletingDriveFileId(null);
+    }
+  }
+
   const activeContent = {
     Dashboard: (
       <DashboardView
@@ -2275,6 +2446,12 @@ export default function Home() {
         driveFilesData={driveFilesData}
         driveStatus={driveStatus}
         onLogout={handleLogout}
+        onRequestDriveDelete={(file) => {
+          setDriveDeleteMessage("");
+          setDriveFileToDelete(file);
+        }}
+        deletingDriveFileId={deletingDriveFileId}
+        driveDeleteMessage={driveDeleteMessage}
       />
     ),
     Calendar: (
@@ -2288,7 +2465,19 @@ export default function Home() {
         onCalendarCreated={() => loadCalendarEvents()}
       />
     ),
-    Drive: <DriveView files={driveFilesData} driveStatus={driveStatus} status={status} />,
+    Drive: (
+      <DriveView
+        files={driveFilesData}
+        driveStatus={driveStatus}
+        status={status}
+        onRequestDelete={(file) => {
+          setDriveDeleteMessage("");
+          setDriveFileToDelete(file);
+        }}
+        deletingFileId={deletingDriveFileId}
+        deleteMessage={driveDeleteMessage}
+      />
+    ),
     Notes: (
       <NotesView
         notes={notes}
@@ -2508,6 +2697,41 @@ export default function Home() {
           </div>
         </section>
       </div>
+      {driveFileToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-white/10 bg-slate-950/95 p-5 shadow-2xl shadow-black/40">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg border border-rose-300/20 bg-rose-400/10 p-2 text-rose-200">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-white">정말 이 파일을 Google Drive에서 삭제할까요?</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  <span className="font-medium text-slate-200">{driveFileToDelete.name}</span> 파일이 실제 Google Drive에서 삭제됩니다. 이 작업은 Google Drive에 반영됩니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDriveFileToDelete(null)}
+                disabled={Boolean(deletingDriveFileId)}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmDriveFileDelete}
+                disabled={Boolean(deletingDriveFileId)}
+                className="rounded-lg bg-rose-400 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingDriveFileId ? "삭제 중..." : "삭제"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
