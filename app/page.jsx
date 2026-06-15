@@ -1623,7 +1623,7 @@ function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
   );
 }
 
-function SidebarMiniAssistant({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
+function MiniAssistantBox({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
   const [miniInput, setMiniInput] = useState("");
   const [miniStatus, setMiniStatus] = useState("idle");
   const [miniMessage, setMiniMessage] = useState("간단한 명령을 바로 실행해요.");
@@ -1692,6 +1692,29 @@ function SidebarMiniAssistant({ status, calendarEvents, driveFilesData, onCalend
           {miniStatus === "loading" ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
       </form>
+    </div>
+  );
+}
+
+function EdgeMiniAssistant({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
+  return (
+    <div className="group fixed bottom-8 right-0 z-40 hidden h-80 w-[340px] translate-x-[300px] transition-transform duration-300 ease-out hover:translate-x-0 focus-within:translate-x-0 lg:block">
+      <div className="absolute left-0 top-1/2 flex -translate-x-full -translate-y-1/2 items-center gap-2 rounded-l-lg border border-r-0 border-cyan-300/20 bg-slate-950/90 px-2 py-3 text-cyan-200 shadow-2xl shadow-black/30 backdrop-blur-xl">
+        <Sparkles className="h-4 w-4" />
+        <span className="text-[11px] font-semibold tracking-[0.14em] [writing-mode:vertical-rl]">AI</span>
+      </div>
+      <div className="h-full rounded-l-xl border border-r-0 border-cyan-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-2xl">
+        <MiniAssistantBox
+          status={status}
+          calendarEvents={calendarEvents}
+          driveFilesData={driveFilesData}
+          onCalendarCreated={onCalendarCreated}
+          onTaskCreated={onTaskCreated}
+          onNoteCreated={onNoteCreated}
+          onOpenFullAssistant={onOpenFullAssistant}
+        />
+        <p className="mt-3 text-[11px] leading-5 text-slate-500">오른쪽 라인에 마우스를 올리면 열리고, 벗어나면 접혀요.</p>
+      </div>
     </div>
   );
 }
@@ -2679,16 +2702,7 @@ export default function Home() {
             })}
           </nav>
 
-          <div className="space-y-3 border-t border-white/10 p-4">
-            <SidebarMiniAssistant
-              status={status}
-              calendarEvents={calendarEvents}
-              driveFilesData={driveFilesData}
-              onCalendarCreated={() => loadCalendarEvents()}
-              onTaskCreated={createTaskFromTitle}
-              onNoteCreated={createNoteFromDraft}
-              onOpenFullAssistant={() => setActiveView("AI Assistant")}
-            />
+          <div className="border-t border-white/10 p-4">
             <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs font-medium text-slate-300">워크스페이스 상태</p>
               <div className="mt-3 h-2 rounded-full bg-slate-800">
@@ -2822,6 +2836,15 @@ export default function Home() {
           </div>
         </section>
       </div>
+      <EdgeMiniAssistant
+        status={status}
+        calendarEvents={calendarEvents}
+        driveFilesData={driveFilesData}
+        onCalendarCreated={() => loadCalendarEvents()}
+        onTaskCreated={createTaskFromTitle}
+        onNoteCreated={createNoteFromDraft}
+        onOpenFullAssistant={() => setActiveView("AI Assistant")}
+      />
       {driveFileToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-lg border border-white/10 bg-slate-950/95 p-5 shadow-2xl shadow-black/40">
