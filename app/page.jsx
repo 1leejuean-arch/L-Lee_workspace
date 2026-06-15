@@ -305,9 +305,9 @@ const sidebarItems = [
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
-  { key: "AI Assistant", label: "AI 비서", icon: Bot },
   { key: "Quick Launch", label: "앱 바로가기", icon: Link },
   { key: "Settings", label: "설정", icon: Settings },
+  { key: "AI Assistant", label: "AI 비서", icon: Bot },
 ];
 
 const agendaItems = [
@@ -933,7 +933,7 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, assistantInput, setAssistantInput, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -1033,10 +1033,6 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
           ))}
           {notes.length === 0 && <p className="text-sm text-slate-500">아직 메모가 없습니다.</p>}
         </div>
-      </GlassCard>
-
-      <GlassCard className="xl:col-span-4">
-        <AssistantCard assistantInput={assistantInput} setAssistantInput={setAssistantInput} compact />
       </GlassCard>
 
       <GlassCard className="xl:col-span-12">
@@ -2454,8 +2450,6 @@ export default function Home() {
         monthDays={monthDays}
         markedDays={markedDays}
         currentDay={currentDay}
-        assistantInput={assistantInput}
-        setAssistantInput={setAssistantInput}
         session={session}
         status={status}
         calendarEvents={calendarEvents}
@@ -2470,6 +2464,7 @@ export default function Home() {
         }}
         deletingDriveFileId={deletingDriveFileId}
         driveDeleteMessage={driveDeleteMessage}
+        driveDeleteMessageType={driveDeleteMessageType}
       />
     ),
     Calendar: (
