@@ -538,6 +538,35 @@ function localizeStoredNotes(storedNotes) {
   });
 }
 
+function getLocalWorkspaceData() {
+  const hasStoredTasks = window.localStorage.getItem(TASKS_KEY) !== null;
+  const hasStoredNotes = window.localStorage.getItem(NOTES_KEY) !== null;
+
+  return {
+    tasks: localizeStoredTasks(loadStoredItems(TASKS_KEY, initialTasks)),
+    notes: localizeStoredNotes(loadStoredItems(NOTES_KEY, initialNotes)),
+    pendingTasks: hasStoredTasks
+      ? localizeStoredTasks(loadStoredItems(TASKS_KEY, [])).filter((task) => String(task.id).startsWith("local-"))
+      : [],
+    pendingNotes: hasStoredNotes
+      ? localizeStoredNotes(loadStoredItems(NOTES_KEY, [])).filter((note) => String(note.id).startsWith("local-"))
+      : [],
+  };
+}
+
+function hasMatchingTask(tasks, candidate) {
+  return tasks.some((task) => task.title.trim() === candidate.title.trim());
+}
+
+function hasMatchingNote(notes, candidate) {
+  return notes.some(
+    (note) =>
+      note.title.trim() === candidate.title.trim() &&
+      note.body.trim() === candidate.body.trim() &&
+      (note.tag || "개인").trim() === (candidate.tag || "개인").trim(),
+  );
+}
+
 function GlassCard({ children, className = "" }) {
   return (
     <section
@@ -2028,7 +2057,7 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, todayEventTotal, dr
 }
 
 function WorkspaceStorageNotice({ mode, status }) {
-  if (status === "loading" || mode !== "local") return null;
+  if (status !== "authenticated" || mode !== "local") return null;
 
   return (
     <div className="mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50">
@@ -2094,23 +2123,36 @@ export default function Home() {
     let isActive = true;
 
     async function loadWorkspaceData() {
-      const localTasks = localizeStoredTasks(loadStoredItems(TASKS_KEY, initialTasks));
-      const localNotes = localizeStoredNotes(loadStoredItems(NOTES_KEY, initialNotes));
+      const localWorkspace = getLocalWorkspaceData();
 
       if (!userEmail) {
         if (!isActive) return;
-        setTasks(localTasks);
-        setNotes(localNotes);
+        setTasks(localWorkspace.tasks);
+        setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
         setStorageReady(true);
         return;
       }
 
       try {
-        const [remoteTasks, remoteNotes] = await Promise.all([
+        let [remoteTasks, remoteNotes] = await Promise.all([
           fetchTasksFromSupabase(userEmail),
           fetchNotesFromSupabase(userEmail),
         ]);
+
+        const tasksToSync = localWorkspace.pendingTasks.filter((task) => !hasMatchingTask(remoteTasks, task));
+        const notesToSync = localWorkspace.pendingNotes.filter((note) => !hasMatchingNote(remoteNotes, note));
+
+        if (tasksToSync.length || notesToSync.length) {
+          await Promise.all([
+            ...tasksToSync.map((task) => createTaskInSupabase(userEmail, task)),
+            ...notesToSync.map((note) => createNoteInSupabase(userEmail, note)),
+          ]);
+          [remoteTasks, remoteNotes] = await Promise.all([
+            fetchTasksFromSupabase(userEmail),
+            fetchNotesFromSupabase(userEmail),
+          ]);
+        }
 
         if (!isActive) return;
         setTasks(remoteTasks);
@@ -2121,8 +2163,8 @@ export default function Home() {
       } catch (error) {
         console.warn("Supabase workspace load failed, using localStorage fallback:", error);
         if (!isActive) return;
-        setTasks(localTasks);
-        setNotes(localNotes);
+        setTasks(localWorkspace.tasks);
+        setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
       } finally {
         if (isActive) setStorageReady(true);
@@ -2416,6 +2458,21 @@ export default function Home() {
     setNotificationsOpen(false);
   }
 
+  async function refreshWorkspaceFromSupabase() {
+    if (!userEmail) return;
+
+    const [remoteTasks, remoteNotes] = await Promise.all([
+      fetchTasksFromSupabase(userEmail),
+      fetchNotesFromSupabase(userEmail),
+    ]);
+
+    setTasks(remoteTasks);
+    setNotes(remoteNotes);
+    setWorkspaceStorageMode("supabase");
+    window.localStorage.removeItem(TASKS_KEY);
+    window.localStorage.removeItem(NOTES_KEY);
+  }
+
   async function handleLogout() {
     window.localStorage.removeItem(CALENDAR_EVENTS_KEY);
     window.localStorage.removeItem(DRIVE_FILES_KEY);
@@ -2445,6 +2502,7 @@ export default function Home() {
         setTasks((currentTasks) =>
           currentTasks.map((task) => (task.id === localTask.id ? savedTask : task)),
         );
+        await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase task create failed, keeping localStorage fallback:", error);
         setWorkspaceStorageMode("local");
@@ -2465,6 +2523,7 @@ export default function Home() {
     if (workspaceStorageMode === "supabase" && userEmail && nextTask) {
       try {
         await updateTaskInSupabase(userEmail, nextTask);
+        await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase task update failed, keeping localStorage fallback:", error);
         setWorkspaceStorageMode("local");
@@ -2478,6 +2537,7 @@ export default function Home() {
     if (workspaceStorageMode === "supabase" && userEmail && !String(taskId).startsWith("local-")) {
       try {
         await deleteTaskFromSupabase(userEmail, taskId);
+        await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase task delete failed, keeping localStorage fallback:", error);
         setWorkspaceStorageMode("local");
@@ -2502,6 +2562,7 @@ export default function Home() {
       if (workspaceStorageMode === "supabase" && userEmail && !String(editingNoteId).startsWith("local-")) {
         try {
           await updateNoteInSupabase(userEmail, updatedNote);
+          await refreshWorkspaceFromSupabase();
         } catch (error) {
           console.warn("Supabase note update failed, keeping localStorage fallback:", error);
           setWorkspaceStorageMode("local");
@@ -2525,6 +2586,7 @@ export default function Home() {
         setNotes((currentNotes) =>
           currentNotes.map((note) => (note.id === localNote.id ? savedNote : note)),
         );
+        await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase note create failed, keeping localStorage fallback:", error);
         setWorkspaceStorageMode("local");
@@ -2537,6 +2599,7 @@ export default function Home() {
     if (workspaceStorageMode === "supabase" && userEmail && !String(noteId).startsWith("local-")) {
       try {
         await deleteNoteFromSupabase(userEmail, noteId);
+        await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase note delete failed, keeping localStorage fallback:", error);
         setWorkspaceStorageMode("local");

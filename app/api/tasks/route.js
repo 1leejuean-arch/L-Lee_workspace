@@ -1,5 +1,4 @@
 import { getServerSession } from "next-auth";
-import { NextResponse } from "next/server";
 import { authOptions } from "../auth/[...nextauth]/route";
 import { getSupabaseServerClient } from "../../../lib/supabaseServer";
 
@@ -18,7 +17,15 @@ async function getUserEmail() {
 }
 
 function jsonError(message, status = 500) {
-  return NextResponse.json({ error: message }, { status });
+  return Response.json({ error: message }, { status });
+}
+
+function getSupabaseErrorMessage(error, fallback) {
+  if (error?.message?.includes("Supabase server environment variables")) {
+    return "Supabase 연결을 확인해주세요.";
+  }
+
+  return fallback;
 }
 
 export async function GET() {
@@ -34,10 +41,10 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json({ tasks: (data || []).map(mapTaskRow) });
+    return Response.json({ tasks: (data || []).map(mapTaskRow) });
   } catch (error) {
     console.error("Tasks GET failed:", error);
-    return jsonError("할 일을 불러오지 못했습니다.");
+    return jsonError(getSupabaseErrorMessage(error, "할 일을 불러오지 못했습니다."));
   }
 }
 
@@ -63,10 +70,10 @@ export async function POST(request) {
       .single();
 
     if (error) throw error;
-    return NextResponse.json({ task: mapTaskRow(data) });
+    return Response.json({ task: mapTaskRow(data) });
   } catch (error) {
     console.error("Tasks POST failed:", error);
-    return jsonError("할 일을 저장하지 못했습니다.");
+    return jsonError(getSupabaseErrorMessage(error, "할 일을 저장하지 못했습니다."));
   }
 }
 
@@ -91,10 +98,10 @@ export async function PATCH(request) {
       .eq("user_email", userEmail);
 
     if (error) throw error;
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (error) {
     console.error("Tasks PATCH failed:", error);
-    return jsonError("할 일을 수정하지 못했습니다.");
+    return jsonError(getSupabaseErrorMessage(error, "할 일을 수정하지 못했습니다."));
   }
 }
 
@@ -114,9 +121,9 @@ export async function DELETE(request) {
       .eq("user_email", userEmail);
 
     if (error) throw error;
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (error) {
     console.error("Tasks DELETE failed:", error);
-    return jsonError("할 일을 삭제하지 못했습니다.");
+    return jsonError(getSupabaseErrorMessage(error, "할 일을 삭제하지 못했습니다."));
   }
 }
