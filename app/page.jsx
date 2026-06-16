@@ -1029,7 +1029,7 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -1136,7 +1136,9 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
           completedCount={completedCount}
           taskTotal={tasks.length}
           noteTotal={notes.length}
+          todayEventTotal={calendarEvents.today.length}
           driveFileTotal={driveFilesData.length}
+          storageMode={storageMode}
         />
       </GlassCard>
     </div>
@@ -2004,13 +2006,15 @@ function SettingsView({ session, status, onLogout, themeMode, onThemeChange, cal
   );
 }
 
-function SummaryGrid({ completedCount, taskTotal, noteTotal, driveFileTotal }) {
+function SummaryGrid({ completedCount, taskTotal, noteTotal, todayEventTotal, driveFileTotal, storageMode }) {
+  const workspaceDataLabel = storageMode === "supabase" ? "계정 기준 동기화 데이터" : "임시 로컬 데이터";
+
   return (
     <div className="grid gap-4 p-5 md:grid-cols-4">
       {[
-        ["완료한 할 일", `${completedCount}/${taskTotal}`, "로컬에 저장된 할 일"],
-        ["메모", String(noteTotal), "로컬에 저장된 메모"],
-        ["오늘 일정", String(agendaItems.length), "캘린더 목업 데이터"],
+        ["완료한 할 일", `${completedCount}/${taskTotal}`, workspaceDataLabel],
+        ["메모", String(noteTotal), workspaceDataLabel],
+        ["오늘 일정", String(todayEventTotal), "Google Calendar 데이터"],
         ["최근 파일", String(driveFileTotal), "드라이브 파일 메타데이터"],
       ].map(([label, value, helper]) => (
         <div key={label} className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
@@ -2019,6 +2023,16 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, driveFileTotal }) {
           <p className="mt-1 text-xs text-slate-500">{helper}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function WorkspaceStorageNotice({ mode, status }) {
+  if (status === "loading" || mode !== "local") return null;
+
+  return (
+    <div className="mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50">
+      임시 로컬 데이터로 표시 중입니다. Google 계정과 Supabase 연결이 정상화되면 계정 기준 데이터로 다시 동기화됩니다.
     </div>
   );
 }
@@ -2099,9 +2113,11 @@ export default function Home() {
         ]);
 
         if (!isActive) return;
-        setTasks(remoteTasks.length ? remoteTasks : localTasks);
-        setNotes(remoteNotes.length ? remoteNotes : localNotes);
+        setTasks(remoteTasks);
+        setNotes(remoteNotes);
         setWorkspaceStorageMode("supabase");
+        window.localStorage.removeItem(TASKS_KEY);
+        window.localStorage.removeItem(NOTES_KEY);
       } catch (error) {
         console.warn("Supabase workspace load failed, using localStorage fallback:", error);
         if (!isActive) return;
@@ -2122,12 +2138,16 @@ export default function Home() {
   }, [status, userEmail]);
 
   useEffect(() => {
-    if (storageReady) window.localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-  }, [storageReady, tasks]);
+    if (storageReady && workspaceStorageMode === "local") {
+      window.localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    }
+  }, [storageReady, tasks, workspaceStorageMode]);
 
   useEffect(() => {
-    if (storageReady) window.localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-  }, [storageReady, notes]);
+    if (storageReady && workspaceStorageMode === "local") {
+      window.localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+    }
+  }, [storageReady, notes, workspaceStorageMode]);
 
   function loadCachedCalendarEvents() {
     const cachedEvents = loadStoredItems(CALENDAR_EVENTS_KEY, { today: [], week: [], month: [] });
@@ -2178,6 +2198,9 @@ export default function Home() {
       if (cachedEvents.today.length || cachedEvents.week.length || cachedEvents.month.length) {
         setCalendarEvents(cachedEvents);
         setCalendarStatus("ready");
+      } else if (status === "authenticated") {
+        setCalendarEvents({ today: [], week: [], month: [] });
+        setCalendarStatus("fallback");
       } else {
         setCalendarEvents({ today: agendaItems, week: agendaItems, month: agendaItems });
         setCalendarStatus("fallback");
@@ -2580,6 +2603,7 @@ export default function Home() {
         calendarStatus={calendarStatus}
         driveFilesData={driveFilesData}
         driveStatus={driveStatus}
+        storageMode={workspaceStorageMode}
         onLogout={handleLogout}
         onRequestDriveDelete={(file) => {
           setDriveDeleteMessage("");
@@ -2832,6 +2856,7 @@ export default function Home() {
 
           <div className="workspace-scrollbar flex-1 overflow-y-auto p-4 md:p-8">
             <ViewTitle activeView={activeView} />
+            <WorkspaceStorageNotice mode={workspaceStorageMode} status={status} />
             {activeContent[activeView]}
           </div>
         </section>
