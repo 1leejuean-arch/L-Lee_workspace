@@ -37,6 +37,8 @@ function normalizeEvent(event, index) {
     time: isAllDay ? "종일" : formatTime(startValue),
     duration: formatDuration(startValue, endValue, isAllDay),
     place: event.location || event.hangoutLink || event.organizer?.email || "Google Calendar",
+    location: event.location || "",
+    description: event.description || "",
     accent: accents[index % accents.length],
     start: startValue,
     end: endValue,
@@ -44,8 +46,12 @@ function normalizeEvent(event, index) {
   };
 }
 
-function getDateRange() {
+function getDateRange(searchParams) {
   const now = new Date();
+  const requestedYear = Number(searchParams.get("year"));
+  const requestedMonth = Number(searchParams.get("month"));
+  const targetYear = Number.isInteger(requestedYear) && requestedYear >= 1970 ? requestedYear : now.getFullYear();
+  const targetMonth = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 ? requestedMonth - 1 : now.getMonth();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
 
@@ -56,14 +62,17 @@ function getDateRange() {
   weekEnd.setDate(weekEnd.getDate() + 7);
   weekEnd.setHours(23, 59, 59, 999);
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const monthStart = new Date(targetYear, targetMonth, 1);
+  const monthEnd = new Date(targetYear, targetMonth + 1, 0);
   monthEnd.setHours(23, 59, 59, 999);
 
-  const lookupEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+  const lookupEnd = new Date(targetYear, targetMonth + 2, 0);
   lookupEnd.setHours(23, 59, 59, 999);
 
-  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd };
+  const fetchStart = monthStart < todayStart ? monthStart : todayStart;
+  const fetchEnd = lookupEnd > weekEnd ? lookupEnd : weekEnd;
+
+  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd, fetchStart, fetchEnd };
 }
 
 async function readGoogleError(response) {
@@ -81,7 +90,7 @@ async function readGoogleError(response) {
   return (await response.text().catch(() => "")) || "Google Calendar API error";
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -89,13 +98,14 @@ export async function GET() {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
-    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd } = getDateRange();
+    const { searchParams } = new URL(request.url);
+    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, fetchStart, fetchEnd } = getDateRange(searchParams);
     const params = new URLSearchParams({
-      timeMin: monthStart.toISOString(),
-      timeMax: lookupEnd.toISOString(),
+      timeMin: fetchStart.toISOString(),
+      timeMax: fetchEnd.toISOString(),
       singleEvents: "true",
       orderBy: "startTime",
-      maxResults: "100",
+      maxResults: "2500",
     });
 
     const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {

@@ -18,6 +18,7 @@ import {
   CalendarDays,
   Check,
   CheckSquare,
+  ChevronLeft,
   ChevronRight,
   Circle,
   Clock3,
@@ -846,20 +847,66 @@ function ViewTitle({ activeView }) {
   );
 }
 
-function MiniCalendar({ monthDays, markedDays, currentDay }) {
+function MiniCalendar({ monthDays, markedDays, currentDay, visibleDate = new Date(), onMonthChange, onDateSelect }) {
   const monthLabel = new Intl.DateTimeFormat("ko-KR", {
     year: "numeric",
     month: "long",
-  }).format(new Date());
+  }).format(visibleDate);
+  const monthInputValue = `${visibleDate.getFullYear()}-${String(visibleDate.getMonth() + 1).padStart(2, "0")}`;
+
+  function moveMonth(offset) {
+    if (!onMonthChange) return;
+    onMonthChange(new Date(visibleDate.getFullYear(), visibleDate.getMonth() + offset, 1));
+  }
+
+  function selectMonth(value) {
+    if (!value || !onMonthChange) return;
+    const [year, month] = value.split("-").map(Number);
+    onMonthChange(new Date(year, month - 1, 1));
+  }
 
   return (
     <div className="p-5">
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-lg font-semibold text-white">{monthLabel}</p>
-          <p className="text-xs text-slate-500">목업 캘린더 보기</p>
+          <p className="text-xs text-slate-500">Google 캘린더 월별 보기</p>
         </div>
-        <span className="rounded-lg bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">오늘</span>
+        {onMonthChange ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => moveMonth(-1)}
+              aria-label="이전 달"
+              className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <input
+              type="month"
+              value={monthInputValue}
+              onChange={(event) => selectMonth(event.target.value)}
+              className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-2 text-xs text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+            <button
+              type="button"
+              onClick={() => moveMonth(1)}
+              aria-label="다음 달"
+              className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onMonthChange(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+              className="rounded-lg bg-cyan-300/10 px-3 py-2 text-xs text-cyan-200 transition hover:bg-cyan-300/20"
+            >
+              오늘
+            </button>
+          </div>
+        ) : (
+          <span className="rounded-lg bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">오늘</span>
+        )}
       </div>
       <div className="grid grid-cols-7 gap-2 text-center text-xs text-slate-500">
         {["일", "월", "화", "수", "목", "금", "토"].map((day, index) => (
@@ -867,14 +914,21 @@ function MiniCalendar({ monthDays, markedDays, currentDay }) {
         ))}
       </div>
       <div className="mt-3 grid grid-cols-7 gap-2">
-        {monthDays.map((day) => (
+        {monthDays.map((day, index) => (
           <button
             type="button"
-            key={day}
+            key={`${day || "blank"}-${index}`}
+            disabled={!day}
+            onClick={() => {
+              if (!day) return;
+              onDateSelect?.(getDateInputValue(new Date(visibleDate.getFullYear(), visibleDate.getMonth(), day)));
+            }}
             className={`relative flex aspect-square items-center justify-center rounded-lg text-sm transition ${
-              day === currentDay
+              day && day === currentDay
                 ? "bg-gradient-to-br from-cyan-400 to-violet-500 text-white shadow-lg shadow-cyan-500/20"
-                : "bg-white/[0.035] text-slate-300 hover:bg-white/10"
+                : day
+                  ? "bg-white/[0.035] text-slate-300 hover:bg-white/10"
+                  : "cursor-default bg-transparent"
             }`}
           >
             {day}
@@ -886,7 +940,7 @@ function MiniCalendar({ monthDays, markedDays, currentDay }) {
   );
 }
 
-function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표시할 일정이 없습니다." }) {
+function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표시할 일정이 없습니다.", onEditEvent }) {
   const visibleEvents = events.slice(0, compact ? 4 : events.length);
 
   if (visibleEvents.length === 0) {
@@ -906,7 +960,14 @@ function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표
               <span>{item.place}</span>
             </div>
           </div>
-          <ChevronRight className="h-4 w-4 text-slate-600" />
+          <button
+            type="button"
+            onClick={() => onEditEvent?.(item)}
+            aria-label={`${item.title} 일정 수정`}
+            className="rounded-lg p-2 text-slate-500 transition hover:bg-white/10 hover:text-cyan-200"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </article>
       ))}
     </div>
@@ -1214,7 +1275,7 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -1279,7 +1340,12 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
 
       <GlassCard className="xl:col-span-4">
         <CardHeader icon={CalendarDays} title="미니 캘린더" action={false} />
-        <MiniCalendar monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />
+        <MiniCalendar
+          monthDays={monthDays}
+          markedDays={markedDays}
+          currentDay={currentDay}
+          visibleDate={visibleCalendarDate}
+        />
       </GlassCard>
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
@@ -1445,6 +1511,177 @@ function CalendarCreateForm({ status, onCreated }) {
   );
 }
 
+function getTimeInputValue(value, fallback = "") {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function getCalendarEditDraft(event) {
+  return {
+    id: event?.id || "",
+    title: event?.title || "",
+    date: event ? getEventDateKey(event) : getDateInputValue(),
+    startTime: getTimeInputValue(event?.start, event?.time && event.time !== "종일" ? event.time : "09:00"),
+    endTime: getTimeInputValue(event?.end, "10:00"),
+    description: event?.description || "",
+    location: event?.location || (event?.place === "Google Calendar" ? "" : event?.place || ""),
+  };
+}
+
+function CalendarEditModal({ event, status, onClose, onSaved }) {
+  const [draft, setDraft] = useState(() => getCalendarEditDraft(event));
+  const [submitStatus, setSubmitStatus] = useState("idle");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setDraft(getCalendarEditDraft(event));
+    setSubmitStatus("idle");
+    setMessage("");
+  }, [event]);
+
+  if (!event) return null;
+
+  function updateDraft(field, value) {
+    setDraft((currentDraft) => ({ ...currentDraft, [field]: value }));
+  }
+
+  async function handleSubmit(submitEvent) {
+    submitEvent.preventDefault();
+
+    if (status !== "authenticated") {
+      setSubmitStatus("error");
+      setMessage("Google 계정을 연결하면 일정을 수정할 수 있어요.");
+      return;
+    }
+
+    setSubmitStatus("loading");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/calendar/update", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(draft),
+      });
+      const { data, text } = await readApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response, data, text, "일정 수정에 실패했습니다."));
+      }
+
+      setSubmitStatus("success");
+      setMessage(data?.message || "일정이 수정되었습니다.");
+      await onSaved();
+      onClose();
+    } catch (error) {
+      setSubmitStatus("error");
+      setMessage(error.message || "일정 수정에 실패했습니다.");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/40">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300/80">Google Calendar</p>
+            <h3 className="mt-2 text-lg font-semibold text-white">일정 수정</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="일정 수정 닫기"
+            className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="grid gap-4 p-5 md:grid-cols-2">
+          <label className="block md:col-span-2">
+            <span className="mb-2 block text-xs text-slate-500">일정 이름</span>
+            <input
+              value={draft.title}
+              onChange={(inputEvent) => updateDraft("title", inputEvent.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs text-slate-500">날짜</span>
+            <input
+              type="date"
+              value={draft.date}
+              onChange={(inputEvent) => updateDraft("date", inputEvent.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs text-slate-500">장소</span>
+            <input
+              value={draft.location}
+              onChange={(inputEvent) => updateDraft("location", inputEvent.target.value)}
+              placeholder="장소 또는 링크"
+              className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs text-slate-500">시작 시간</span>
+            <input
+              type="time"
+              value={draft.startTime}
+              onChange={(inputEvent) => updateDraft("startTime", inputEvent.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs text-slate-500">종료 시간</span>
+            <input
+              type="time"
+              value={draft.endTime}
+              onChange={(inputEvent) => updateDraft("endTime", inputEvent.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="mb-2 block text-xs text-slate-500">설명</span>
+            <textarea
+              value={draft.description}
+              onChange={(inputEvent) => updateDraft("description", inputEvent.target.value)}
+              rows={4}
+              className="workspace-scrollbar w-full resize-none rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm leading-6 text-slate-100 outline-none focus:border-cyan-300/50"
+            />
+          </label>
+          {message && (
+            <p className={`md:col-span-2 text-sm ${submitStatus === "error" ? "text-rose-200" : "text-cyan-200"}`}>
+              {message}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 md:col-span-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitStatus === "loading"}
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={submitStatus === "loading"}
+              className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitStatus === "loading" ? "저장 중..." : "수정 저장"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function getDateInputValue(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -1531,7 +1768,7 @@ function getCalendarMarkedDays(calendarEvents, visibleDate = new Date()) {
   return Array.from(markedDays);
 }
 
-function getCalendarScopeLabel(mode, selectedDate) {
+function getCalendarScopeLabel(mode, selectedDate, visibleDate = new Date()) {
   if (mode === "day") {
     return new Intl.DateTimeFormat("ko-KR", {
       month: "long",
@@ -1540,13 +1777,16 @@ function getCalendarScopeLabel(mode, selectedDate) {
     }).format(new Date(`${selectedDate}T00:00:00`));
   }
 
-  if (mode === "month") return "이번달 일정";
+  if (mode === "month") {
+    return `${visibleDate.getFullYear()}년 ${visibleDate.getMonth() + 1}월 일정`;
+  }
   return "이번 주 일정";
 }
 
-function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calendarStatus, status, onCalendarCreated }) {
+function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthChange, calendarEvents, calendarStatus, status, onCalendarCreated }) {
   const [scheduleMode, setScheduleMode] = useState("week");
   const [selectedDate, setSelectedDate] = useState(getDateInputValue());
+  const [editingEvent, setEditingEvent] = useState(null);
   const monthEvents = calendarEvents.month || calendarEvents.week || [];
   const selectedEvents =
     scheduleMode === "day"
@@ -1554,18 +1794,29 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
       : scheduleMode === "month"
         ? monthEvents
         : calendarEvents.week || [];
-  const scheduleTitle = getCalendarScopeLabel(scheduleMode, selectedDate);
+  const scheduleTitle = getCalendarScopeLabel(scheduleMode, selectedDate, visibleDate);
   const emptyMessage =
     status === "authenticated"
       ? `${scheduleTitle}에 표시할 Google Calendar 일정이 없습니다.`
       : "Google 계정을 연결하면 일정을 볼 수 있어요.";
+  const handleDateSelect = (dateValue) => {
+    setSelectedDate(dateValue);
+    setScheduleMode("day");
+  };
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <CalendarCreateForm status={status} onCreated={onCalendarCreated} />
       <GlassCard className="xl:col-span-7">
         <CardHeader icon={CalendarDays} title="캘린더 개요" action={false} />
-        <MiniCalendar monthDays={monthDays} markedDays={markedDays} currentDay={currentDay} />
+        <MiniCalendar
+          monthDays={monthDays}
+          markedDays={markedDays}
+          currentDay={currentDay}
+          visibleDate={visibleDate}
+          onMonthChange={onMonthChange}
+          onDateSelect={handleDateSelect}
+        />
       </GlassCard>
       <GlassCard className="xl:col-span-5">
         <CardHeader icon={Clock3} title={scheduleTitle} action={false} />
@@ -1605,6 +1856,7 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
         <AgendaList
           events={selectedEvents}
           emptyMessage={emptyMessage}
+          onEditEvent={setEditingEvent}
         />
         <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
@@ -1618,6 +1870,12 @@ function CalendarView({ monthDays, markedDays, currentDay, calendarEvents, calen
           ))}
         </div>
       </GlassCard>
+      <CalendarEditModal
+        event={editingEvent}
+        status={status}
+        onClose={() => setEditingEvent(null)}
+        onSaved={onCalendarCreated}
+      />
     </div>
   );
 }
@@ -2244,6 +2502,10 @@ export default function Home() {
   const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [], lookup: [] });
+  const [visibleCalendarDate, setVisibleCalendarDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
@@ -2361,11 +2623,15 @@ export default function Home() {
     return loadStoredItems(DRIVE_FILES_KEY, []);
   }
 
-  async function loadCalendarEvents(signal) {
+  async function loadCalendarEvents(signal, targetDate = visibleCalendarDate) {
     setCalendarStatus("loading");
 
     try {
-      const response = await fetch("/api/calendar/events", {
+      const params = new URLSearchParams({
+        year: String(targetDate.getFullYear()),
+        month: String(targetDate.getMonth() + 1),
+      });
+      const response = await fetch(`/api/calendar/events?${params}`, {
         signal,
         cache: "no-store",
       });
@@ -2419,10 +2685,10 @@ export default function Home() {
     }
 
     const controller = new AbortController();
-    loadCalendarEvents(controller.signal);
+    loadCalendarEvents(controller.signal, visibleCalendarDate);
 
     return () => controller.abort();
-  }, [status]);
+  }, [status, visibleCalendarDate]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -2493,10 +2759,18 @@ export default function Home() {
   const signedInUser = session?.user;
   const displayName = signedInUser?.name || "주언";
   const greetingText = getTimeBasedGreeting(currentHour);
-  const currentMonthLength = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const monthDays = Array.from({ length: currentMonthLength }, (_, index) => index + 1);
-  const currentDay = new Date().getDate();
-  const markedDays = useMemo(() => getCalendarMarkedDays(calendarEvents), [calendarEvents]);
+  const visibleMonthStartDay = new Date(visibleCalendarDate.getFullYear(), visibleCalendarDate.getMonth(), 1).getDay();
+  const currentMonthLength = new Date(visibleCalendarDate.getFullYear(), visibleCalendarDate.getMonth() + 1, 0).getDate();
+  const monthDays = [
+    ...Array.from({ length: visibleMonthStartDay }, () => null),
+    ...Array.from({ length: currentMonthLength }, (_, index) => index + 1),
+  ];
+  const now = new Date();
+  const currentDay =
+    visibleCalendarDate.getFullYear() === now.getFullYear() && visibleCalendarDate.getMonth() === now.getMonth()
+      ? now.getDate()
+      : null;
+  const markedDays = useMemo(() => getCalendarMarkedDays(calendarEvents, visibleCalendarDate), [calendarEvents, visibleCalendarDate]);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -2818,6 +3092,7 @@ export default function Home() {
         monthDays={monthDays}
         markedDays={markedDays}
         currentDay={currentDay}
+        visibleCalendarDate={visibleCalendarDate}
         session={session}
         status={status}
         calendarEvents={calendarEvents}
@@ -2841,6 +3116,8 @@ export default function Home() {
         monthDays={monthDays}
         markedDays={markedDays}
         currentDay={currentDay}
+        visibleDate={visibleCalendarDate}
+        onMonthChange={setVisibleCalendarDate}
         calendarEvents={calendarEvents}
         calendarStatus={calendarStatus}
         status={status}
