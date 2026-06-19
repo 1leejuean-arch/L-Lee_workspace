@@ -214,6 +214,8 @@ function getAssistantIntent(input) {
       text.includes("남은") ||
       text.includes("있어") ||
       text.includes("있나요") ||
+      text.includes("있는지") ||
+      text.includes("있나") ||
       text.includes("뭐") ||
       text.includes("무슨") ||
       text.includes("어떤") ||
@@ -362,20 +364,35 @@ function extractCalendarSearchTerm(input) {
     .toLowerCase()
     .replace(/\d{1,2}\s*월\s*\d{1,2}\s*일/g, " ")
     .replace(/이번\s*주|다음\s*주|오늘|내일/g, " ")
-    .replace(/일정|있나요|있어|있니|무슨|어떤|뭐|알려줘|알려|요약|정리|남은|에|의|은|는|이|가|을|를|\?|#/g, " ")
+    .replace(/일정|있나요|있는지|있나|있어|있니|무슨|어떤|뭐|알려줘|알려|요약|정리|남은|궁금해|확인해줘|확인|찾아줘|찾아|보여줘|보여|\?|#/g, " ")
     .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((word) => word.replace(/(은|는|이|가|을|를|에)$/g, ""))
+    .filter(Boolean)
+    .join(" ")
     .trim();
 }
 
+function getCalendarSearchTerms(searchTerm) {
+  if (!searchTerm) return [];
+  if (searchTerm === "회의" || searchTerm === "미팅") {
+    return ["회의", "미팅", "meet", "meeting"];
+  }
+  return [searchTerm];
+}
+
 function filterCalendarEventsForQuery(events, range, searchTerm) {
+  const searchTerms = getCalendarSearchTerms(searchTerm);
+
   return events
     .filter((event) => {
       const start = getEventStart(event);
       if (!start || start < range.start || start >= range.end) return false;
 
-      if (!searchTerm) return true;
+      if (!searchTerms.length) return true;
       const targetText = `${event.title || ""} ${event.place || ""}`.toLowerCase();
-      return targetText.includes(searchTerm);
+      return searchTerms.some((term) => targetText.includes(term));
     })
     .sort((first, second) => getEventStart(first).getTime() - getEventStart(second).getTime());
 }
