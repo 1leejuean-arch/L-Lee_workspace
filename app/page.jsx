@@ -1463,18 +1463,24 @@ function CalendarCreateForm({ status, onCreated }) {
           onChange={(event) => updateDraft("date", event.target.value)}
           className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
         />
-        <input
-          type="time"
-          value={draft.startTime}
-          onChange={(event) => updateDraft("startTime", event.target.value)}
-          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
-        />
-        <input
-          type="time"
-          value={draft.endTime}
-          onChange={(event) => updateDraft("endTime", event.target.value)}
-          className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
-        />
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-medium text-slate-500">시작 시간</span>
+          <input
+            type="time"
+            value={draft.startTime}
+            onChange={(event) => updateDraft("startTime", event.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-medium text-slate-500">종료 시간</span>
+          <input
+            type="time"
+            value={draft.endTime}
+            onChange={(event) => updateDraft("endTime", event.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+          />
+        </label>
         <textarea
           value={draft.description}
           onChange={(event) => updateDraft("description", event.target.value)}
