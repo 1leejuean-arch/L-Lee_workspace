@@ -198,8 +198,125 @@ function findAssistantShortcut(input) {
   );
 }
 
+function normalizeInput(input) {
+  const lower = input.trim().toLowerCase();
+  const cleaned = lower
+    .replace(/[?!.,。！？~…#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    original: input,
+    lower,
+    cleaned,
+    compact: cleaned.replace(/\s+/g, ""),
+  };
+}
+
+function includesAny(normalized, keywords) {
+  return keywords.some((keyword) => {
+    const compactKeyword = keyword.replace(/\s+/g, "");
+    return normalized.cleaned.includes(keyword) || normalized.compact.includes(compactKeyword);
+  });
+}
+
+const calendarNouns = ["일정", "스케줄", "약속", "예약", "캘린더"];
+const calendarSummaryWords = [
+  "뭐 있어",
+  "뭐있어",
+  "뭐 있음",
+  "뭐있음",
+  "있어",
+  "있음",
+  "있냐",
+  "있나",
+  "있나요",
+  "있는지",
+  "알려줘",
+  "보여줘",
+  "정리해줘",
+  "정리",
+  "요약해줘",
+  "요약",
+  "남은",
+  "잡힌",
+  "예약된",
+];
+const calendarCreateWords = ["추가", "넣어", "예약해", "잡아", "만들어", "등록"];
+const calendarUpdateWords = ["수정", "변경", "바꿔", "미뤄", "뒤로", "앞당겨", "옮겨"];
+const calendarDeleteWords = ["삭제", "지워", "없애", "취소"];
+const calendarFindWords = ["찾아", "검색", "관련", "만 보여", "만보여"];
+const calendarDateWords = [
+  "오늘",
+  "내일",
+  "이번주",
+  "이번 주",
+  "다음주",
+  "다음 주",
+  "담주",
+  "이번달",
+  "이번 달",
+  "다음달",
+  "다음 달",
+  "올해",
+  "이번년도",
+  "이번 년도",
+];
+
+function hasCalendarContext(normalized) {
+  return (
+    includesAny(normalized, calendarNouns) ||
+    includesAny(normalized, calendarDateWords) ||
+    /\d{4}-\d{1,2}-\d{1,2}/.test(normalized.cleaned) ||
+    /\d{1,2}\s*월\s*\d{1,2}\s*일/.test(normalized.cleaned) ||
+    /\d{1,2}\s*\/\s*\d{1,2}/.test(normalized.cleaned)
+  );
+}
+
+function detectCalendarAction(input) {
+  const normalized = normalizeInput(input);
+
+  if (includesAny(normalized, calendarDeleteWords)) return "delete";
+  if (includesAny(normalized, calendarUpdateWords)) return "update";
+  if (includesAny(normalized, calendarCreateWords) && !includesAny(normalized, ["예약된", "예약되어"])) return "create";
+  if (includesAny(normalized, calendarFindWords)) return "find";
+  if (includesAny(normalized, calendarSummaryWords) || includesAny(normalized, calendarDateWords)) return "summary";
+
+  return "unknown";
+}
+
+function detectCalendarIntent(input) {
+  const normalized = normalizeInput(input);
+  if (!hasCalendarContext(normalized)) return null;
+
+  const action = detectCalendarAction(input);
+  if (action === "create") return { intent: "calendar_create", action };
+  if (action === "update") return { intent: "calendar_update", action };
+  if (action === "delete") return { intent: "calendar_delete", action };
+  if (action === "find") return { intent: "calendar_find", action };
+
+  const range = detectDateRange(input);
+  if (action === "summary" || range.scope !== "today" || includesAny(normalized, calendarNouns)) {
+    const intentByScope = {
+      today: "calendar_summary_today",
+      tomorrow: "calendar_summary_tomorrow",
+      week: "calendar_summary_week",
+      next_week: "calendar_summary_next_week",
+      month: "calendar_summary_month",
+      next_month: "calendar_summary_next_month",
+      year: "calendar_summary_year",
+      date: "calendar_summary_date",
+    };
+    return { intent: intentByScope[range.scope] || "calendar_summary_today", action: "summary", range };
+  }
+
+  return null;
+}
+
 function getAssistantIntent(input) {
   const text = normalizeCommand(input);
+  const normalized = normalizeInput(input);
+  const calendarIntent = detectCalendarIntent(input);
 
   if ((text.includes("열어") || text.includes("켜줘") || text.includes("바로가기")) && findAssistantShortcut(text)) {
     return "app_open";
@@ -207,26 +324,8 @@ function getAssistantIntent(input) {
   if (text.includes("드라이브") && (text.includes("정리") || text.includes("최근") || text.includes("보여") || text.includes("요약"))) {
     return "drive_summary";
   }
-  if (
-    text.includes("일정") &&
-    (text.includes("요약") ||
-      text.includes("알려") ||
-      text.includes("정리") ||
-      text.includes("남은") ||
-      text.includes("있어") ||
-      text.includes("있나요") ||
-      text.includes("있는지") ||
-      text.includes("있나") ||
-      text.includes("뭐") ||
-      text.includes("무슨") ||
-      text.includes("어떤") ||
-      text.includes("이번주") ||
-      text.includes("이번 주") ||
-      text.includes("다음주") ||
-      text.includes("다음 주") ||
-      /\d{1,2}\s*월\s*\d{1,2}\s*일/.test(text))
-  ) {
-    return "calendar_summary";
+  if (calendarIntent) {
+    return calendarIntent.intent;
   }
   if ((text.includes("할 일") || text.includes("할일")) && (text.includes("추가") || text.includes("넣어") || text.includes("등록"))) {
     return "task_create";
@@ -234,7 +333,7 @@ function getAssistantIntent(input) {
   if (text.includes("메모") && (text.includes("추가") || text.includes("적어") || text.includes("기록") || text.includes("저장"))) {
     return "note_create";
   }
-  if (text.includes("일정") || text.includes("예약") || text.includes("회의") || text.includes("운동")) {
+  if (hasCalendarContext(normalized) && includesAny(normalized, calendarCreateWords)) {
     return "calendar_create";
   }
 
@@ -305,67 +404,199 @@ function formatKoreanDate(date) {
   }).format(date);
 }
 
-function getCalendarQueryRange(input, now = new Date()) {
-  const text = normalizeCommand(input);
-  const monthDayMatch = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+const weekdayMapForParser = {
+  일요일: 0,
+  일욜: 0,
+  월요일: 1,
+  월욜: 1,
+  화요일: 2,
+  화욜: 2,
+  수요일: 3,
+  수욜: 3,
+  목요일: 4,
+  목욜: 4,
+  금요일: 5,
+  금욜: 5,
+  토요일: 6,
+  토욜: 6,
+};
 
-  if (monthDayMatch) {
-    const month = Number(monthDayMatch[1]) - 1;
-    const day = Number(monthDayMatch[2]);
-    const date = new Date(now.getFullYear(), month, day);
+function getNextWeekdayDate(targetDay, now, forceNextWeek = false) {
+  const date = startOfDay(now);
+  const currentDay = date.getDay();
+  let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+  if (forceNextWeek) daysUntilTarget = daysUntilTarget === 0 ? 7 : daysUntilTarget + 7;
+  return addDays(date, daysUntilTarget);
+}
+
+function detectDateRange(input, now = new Date()) {
+  const normalized = normalizeInput(input);
+  const text = normalized.cleaned;
+  const compact = normalized.compact;
+  const isoDateMatch = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const slashDateMatch = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+  const monthDayMatch = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  const yearMatch = text.match(/(\d{4})\s*년/);
+
+  if (isoDateMatch) {
+    const date = new Date(Number(isoDateMatch[1]), Number(isoDateMatch[2]) - 1, Number(isoDateMatch[3]));
     return {
+      scope: "date",
       start: startOfDay(date),
       end: addDays(startOfDay(date), 1),
-      label: `${month + 1}월 ${day}일`,
+      label: `${date.getMonth() + 1}월 ${date.getDate()}일`,
       includeDate: false,
+      fetchYear: date.getFullYear(),
+      fetchMonth: date.getMonth() + 1,
     };
   }
 
-  if (text.includes("다음주") || text.includes("다음 주")) {
+  if (monthDayMatch || slashDateMatch) {
+    const [, rawMonth, rawDay] = monthDayMatch || slashDateMatch;
+    const date = new Date(now.getFullYear(), Number(rawMonth) - 1, Number(rawDay));
+    return {
+      scope: "date",
+      start: startOfDay(date),
+      end: addDays(startOfDay(date), 1),
+      label: `${date.getMonth() + 1}월 ${date.getDate()}일`,
+      includeDate: false,
+      fetchYear: date.getFullYear(),
+      fetchMonth: date.getMonth() + 1,
+    };
+  }
+
+  const weekdayEntry = Object.entries(weekdayMapForParser).find(([label]) => compact.includes(label));
+  if (weekdayEntry) {
+    const [, targetDay] = weekdayEntry;
+    const date = getNextWeekdayDate(targetDay, now, compact.includes("다음주") || compact.includes("담주"));
+    return {
+      scope: "date",
+      start: startOfDay(date),
+      end: addDays(startOfDay(date), 1),
+      label: formatKoreanDate(date),
+      includeDate: false,
+      fetchYear: date.getFullYear(),
+      fetchMonth: date.getMonth() + 1,
+    };
+  }
+
+  if (compact.includes("다음달")) {
+    const start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+    return {
+      scope: "next_month",
+      start,
+      end,
+      label: "다음 달",
+      includeDate: true,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
+    };
+  }
+
+  if (compact.includes("이번달")) {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return {
+      scope: "month",
+      start,
+      end,
+      label: "이번 달",
+      includeDate: true,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
+    };
+  }
+
+  if (compact.includes("올해") || compact.includes("이번년도") || yearMatch) {
+    const year = yearMatch ? Number(yearMatch[1]) : now.getFullYear();
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 0, 1);
+    return {
+      scope: "year",
+      start,
+      end,
+      label: `${year}년`,
+      includeDate: true,
+      fetchYear: year,
+      fetchRange: "year",
+    };
+  }
+
+  if (compact.includes("다음주") || compact.includes("담주")) {
     const start = addDays(getWeekStart(now), 7);
     return {
+      scope: "next_week",
       start,
       end: addDays(start, 7),
       label: "다음 주",
       includeDate: true,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
     };
   }
 
-  if (text.includes("이번주") || text.includes("이번 주")) {
+  if (compact.includes("이번주")) {
     const start = getWeekStart(now);
     return {
+      scope: "week",
       start,
       end: addDays(start, 7),
       label: "이번 주",
       includeDate: true,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
     };
   }
 
-  if (text.includes("내일")) {
+  if (compact.includes("내일")) {
     const start = addDays(startOfDay(now), 1);
     return {
+      scope: "tomorrow",
       start,
       end: addDays(start, 1),
       label: "내일",
       includeDate: false,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
+    };
+  }
+
+  if (compact.includes("오늘")) {
+    const start = startOfDay(now);
+    return {
+      scope: "today",
+      start,
+      end: addDays(start, 1),
+      label: "오늘",
+      includeDate: false,
+      fetchYear: start.getFullYear(),
+      fetchMonth: start.getMonth() + 1,
     };
   }
 
   const start = startOfDay(now);
   return {
+    scope: "today",
     start,
     end: addDays(start, 1),
     label: "오늘",
     includeDate: false,
+    fetchYear: start.getFullYear(),
+    fetchMonth: start.getMonth() + 1,
   };
 }
 
 function extractCalendarSearchTerm(input) {
-  return input
-    .toLowerCase()
+  const normalized = normalizeInput(input);
+  return normalized.cleaned
+    .replace(/\d{4}-\d{1,2}-\d{1,2}/g, " ")
+    .replace(/\d{1,2}\s*\/\s*\d{1,2}/g, " ")
     .replace(/\d{1,2}\s*월\s*\d{1,2}\s*일/g, " ")
-    .replace(/이번\s*주|다음\s*주|오늘|내일/g, " ")
-    .replace(/일정|있나요|있는지|있나|있어|있니|무슨|어떤|뭐|알려줘|알려|요약|정리|남은|궁금해|확인해줘|확인|찾아줘|찾아|보여줘|보여|\?|#/g, " ")
+    .replace(/이번\s*주|다음\s*주|담주|이번\s*달|다음\s*달|오늘|내일|올해|이번\s*년도|\d{4}\s*년/g, " ")
+    .replace(/월요일|화요일|수요일|목요일|금요일|토요일|일요일|월욜|화욜|수욜|목욜|금욜|토욜|일욜/g, " ")
+    .replace(/오전|오후|저녁|밤|아침|낮|새벽/g, " ")
+    .replace(/일정|스케줄|약속|예약|캘린더|있나요|있는지|있나|있어|있니|있냐|있음|무슨|어떤|뭐|알려줘|알려|요약해줘|요약|정리해줘|정리|남은|잡힌|예약된|궁금해|확인해줘|확인|찾아줘|찾아|검색|보여줘|보여|관련|만/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .split(" ")
@@ -398,6 +629,29 @@ function filterCalendarEventsForQuery(events, range, searchTerm) {
     .sort((first, second) => getEventStart(first).getTime() - getEventStart(second).getTime());
 }
 
+async function getCalendarEventsForSummary(range, calendarEvents, status) {
+  if (status !== "authenticated") {
+    return calendarEvents.lookup || calendarEvents.month || calendarEvents.week || calendarEvents.today || [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      year: String(range.fetchYear),
+    });
+    if (range.fetchMonth) params.set("month", String(range.fetchMonth));
+    if (range.fetchRange) params.set("range", range.fetchRange);
+
+    const response = await fetch(`/api/calendar/events?${params}`, { cache: "no-store" });
+    const { data } = await readApiResponse(response);
+    if (!response.ok) throw new Error("Calendar summary fetch failed");
+
+    return data?.lookup || data?.month || data?.week || data?.today || [];
+  } catch (error) {
+    console.warn("Calendar summary fetch failed, using loaded events:", error);
+    return calendarEvents.lookup || calendarEvents.month || calendarEvents.week || calendarEvents.today || [];
+  }
+}
+
 function formatEventSummary(events, scopeLabel, options = {}) {
   const { searchTerm = "", includeDate = false } = options;
   const targetLabel = searchTerm ? `${scopeLabel} '${searchTerm}'` : scopeLabel;
@@ -412,10 +666,10 @@ function formatEventSummary(events, scopeLabel, options = {}) {
   return `${targetLabel} 일정은 ${events.length}개예요.\n${lines.join("\n")}${suffix}`;
 }
 
-function summarizeCalendar(input, calendarEvents) {
-  const range = getCalendarQueryRange(input);
+async function summarizeCalendar(input, calendarEvents, status) {
+  const range = detectDateRange(input);
   const searchTerm = extractCalendarSearchTerm(input);
-  const sourceEvents = calendarEvents.lookup || calendarEvents.month || calendarEvents.week || calendarEvents.today || [];
+  const sourceEvents = await getCalendarEventsForSummary(range, calendarEvents, status);
   const matchedEvents = filterCalendarEventsForQuery(sourceEvents, range, searchTerm);
 
   return formatEventSummary(matchedEvents, range.label, {
@@ -468,8 +722,8 @@ async function executeWorkspaceAiCommand(command, context, options = {}) {
     return { message: `${shortcut.name}을 새 탭으로 열었어요.` };
   }
 
-  if (intent === "calendar_summary") {
-    return { message: summarizeCalendar(command, calendarEvents) };
+  if (intent.startsWith("calendar_summary") || intent === "calendar_find") {
+    return { message: await summarizeCalendar(command, calendarEvents, status) };
   }
 
   if (intent === "drive_summary") {
@@ -490,6 +744,14 @@ async function executeWorkspaceAiCommand(command, context, options = {}) {
 
     await onNoteCreated(note);
     return { message: `좋아요. '${note.title}' 메모를 추가했어요.` };
+  }
+
+  if (intent === "calendar_update") {
+    return { message: "어떤 일정을 수정할지 조금 더 알려주세요. 지금은 캘린더 화면에서 일정 옆의 > 버튼을 눌러 제목, 날짜, 시간, 장소, 설명을 수정할 수 있어요." };
+  }
+
+  if (intent === "calendar_delete") {
+    return { message: "삭제할 일정 제목이나 날짜를 알려주세요. 정확한 삭제는 캘린더 화면에서 일정 옆의 > 버튼을 누른 뒤 삭제를 선택하면 Google Calendar에도 반영돼요." };
   }
 
   if (intent !== "calendar_create") {

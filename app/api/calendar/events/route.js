@@ -48,6 +48,7 @@ function normalizeEvent(event, index) {
 
 function getDateRange(searchParams) {
   const now = new Date();
+  const range = searchParams.get("range");
   const requestedYear = Number(searchParams.get("year"));
   const requestedMonth = Number(searchParams.get("month"));
   const targetYear = Number.isInteger(requestedYear) && requestedYear >= 1970 ? requestedYear : now.getFullYear();
@@ -62,11 +63,11 @@ function getDateRange(searchParams) {
   weekEnd.setDate(weekEnd.getDate() + 7);
   weekEnd.setHours(23, 59, 59, 999);
 
-  const monthStart = new Date(targetYear, targetMonth, 1);
-  const monthEnd = new Date(targetYear, targetMonth + 1, 0);
+  const monthStart = range === "year" ? new Date(targetYear, 0, 1) : new Date(targetYear, targetMonth, 1);
+  const monthEnd = range === "year" ? new Date(targetYear, 11, 31) : new Date(targetYear, targetMonth + 1, 0);
   monthEnd.setHours(23, 59, 59, 999);
 
-  const lookupEnd = new Date(targetYear, targetMonth + 2, 0);
+  const lookupEnd = range === "year" ? new Date(targetYear, 11, 31) : new Date(targetYear, targetMonth + 2, 0);
   lookupEnd.setHours(23, 59, 59, 999);
 
   const fetchStart = monthStart < todayStart ? monthStart : todayStart;
