@@ -206,7 +206,23 @@ function getAssistantIntent(input) {
   if (text.includes("드라이브") && (text.includes("정리") || text.includes("최근") || text.includes("보여") || text.includes("요약"))) {
     return "drive_summary";
   }
-  if (text.includes("일정") && (text.includes("요약") || text.includes("알려") || text.includes("정리") || text.includes("남은"))) {
+  if (
+    text.includes("일정") &&
+    (text.includes("요약") ||
+      text.includes("알려") ||
+      text.includes("정리") ||
+      text.includes("남은") ||
+      text.includes("있어") ||
+      text.includes("있나요") ||
+      text.includes("뭐") ||
+      text.includes("무슨") ||
+      text.includes("어떤") ||
+      text.includes("이번주") ||
+      text.includes("이번 주") ||
+      text.includes("다음주") ||
+      text.includes("다음 주") ||
+      /\d{1,2}\s*월\s*\d{1,2}\s*일/.test(text))
+  ) {
     return "calendar_summary";
   }
   if ((text.includes("할 일") || text.includes("할일")) && (text.includes("추가") || text.includes("넣어") || text.includes("등록"))) {
@@ -254,20 +270,140 @@ function extractNoteDraft(input) {
   };
 }
 
-function formatEventSummary(events, scopeLabel) {
-  if (!events.length) return `${scopeLabel} 예정된 일정이 없습니다.`;
+function getEventStart(event) {
+  const date = new Date(event.start);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
-  const lines = events.slice(0, 6).map((event, index) => `${index + 1}. ${event.time || "시간 미정"} - ${event.title}`);
+function startOfDay(date) {
+  const nextDate = new Date(date);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate;
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function getWeekStart(date) {
+  const start = startOfDay(date);
+  const day = start.getDay();
+  start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+  return start;
+}
+
+function formatKoreanDate(date) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
+
+function getCalendarQueryRange(input, now = new Date()) {
+  const text = normalizeCommand(input);
+  const monthDayMatch = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+
+  if (monthDayMatch) {
+    const month = Number(monthDayMatch[1]) - 1;
+    const day = Number(monthDayMatch[2]);
+    const date = new Date(now.getFullYear(), month, day);
+    return {
+      start: startOfDay(date),
+      end: addDays(startOfDay(date), 1),
+      label: `${month + 1}월 ${day}일`,
+      includeDate: false,
+    };
+  }
+
+  if (text.includes("다음주") || text.includes("다음 주")) {
+    const start = addDays(getWeekStart(now), 7);
+    return {
+      start,
+      end: addDays(start, 7),
+      label: "다음 주",
+      includeDate: true,
+    };
+  }
+
+  if (text.includes("이번주") || text.includes("이번 주")) {
+    const start = getWeekStart(now);
+    return {
+      start,
+      end: addDays(start, 7),
+      label: "이번 주",
+      includeDate: true,
+    };
+  }
+
+  if (text.includes("내일")) {
+    const start = addDays(startOfDay(now), 1);
+    return {
+      start,
+      end: addDays(start, 1),
+      label: "내일",
+      includeDate: false,
+    };
+  }
+
+  const start = startOfDay(now);
+  return {
+    start,
+    end: addDays(start, 1),
+    label: "오늘",
+    includeDate: false,
+  };
+}
+
+function extractCalendarSearchTerm(input) {
+  return input
+    .toLowerCase()
+    .replace(/\d{1,2}\s*월\s*\d{1,2}\s*일/g, " ")
+    .replace(/이번\s*주|다음\s*주|오늘|내일/g, " ")
+    .replace(/일정|있나요|있어|있니|무슨|어떤|뭐|알려줘|알려|요약|정리|남은|에|의|은|는|이|가|을|를|\?|#/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function filterCalendarEventsForQuery(events, range, searchTerm) {
+  return events
+    .filter((event) => {
+      const start = getEventStart(event);
+      if (!start || start < range.start || start >= range.end) return false;
+
+      if (!searchTerm) return true;
+      const targetText = `${event.title || ""} ${event.place || ""}`.toLowerCase();
+      return targetText.includes(searchTerm);
+    })
+    .sort((first, second) => getEventStart(first).getTime() - getEventStart(second).getTime());
+}
+
+function formatEventSummary(events, scopeLabel, options = {}) {
+  const { searchTerm = "", includeDate = false } = options;
+  const targetLabel = searchTerm ? `${scopeLabel} '${searchTerm}'` : scopeLabel;
+  if (!events.length) return `${targetLabel} 예정된 일정이 없습니다.`;
+
+  const lines = events.slice(0, 6).map((event, index) => {
+    const start = getEventStart(event);
+    const datePrefix = includeDate && start ? `${formatKoreanDate(start)} ` : "";
+    return `${index + 1}. ${datePrefix}${event.time || "시간 미정"} - ${event.title}`;
+  });
   const suffix = events.length > 6 ? `\n외 ${events.length - 6}개 일정이 더 있어요.` : "";
-  return `${scopeLabel} 일정은 ${events.length}개예요.\n${lines.join("\n")}${suffix}`;
+  return `${targetLabel} 일정은 ${events.length}개예요.\n${lines.join("\n")}${suffix}`;
 }
 
 function summarizeCalendar(input, calendarEvents) {
-  const text = normalizeCommand(input);
-  if (text.includes("이번 주") || text.includes("이번주")) {
-    return formatEventSummary(calendarEvents.week || [], "이번 주");
-  }
-  return formatEventSummary(calendarEvents.today || [], "오늘");
+  const range = getCalendarQueryRange(input);
+  const searchTerm = extractCalendarSearchTerm(input);
+  const sourceEvents = calendarEvents.lookup || calendarEvents.month || calendarEvents.week || calendarEvents.today || [];
+  const matchedEvents = filterCalendarEventsForQuery(sourceEvents, range, searchTerm);
+
+  return formatEventSummary(matchedEvents, range.label, {
+    searchTerm,
+    includeDate: range.includeDate,
+  });
 }
 
 function summarizeDriveFiles(files) {
@@ -460,6 +596,9 @@ const initialNotes = [
 const aiSuggestions = [
   "내일 오후 6시에 회의 예약해줘",
   "오늘 일정 요약해줘",
+  "이번주 일정 뭐 있어?",
+  "다음주에 회의 일정있어?",
+  "6월 21일에 무슨 일정있어?",
   "최근 드라이브 파일 정리해줘",
   "이번 주 할 일 우선순위 잡아줘",
   "인스타 열어줘",
@@ -2087,7 +2226,7 @@ export default function Home() {
   const [assistantInput, setAssistantInput] = useState("");
   const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
-  const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [] });
+  const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [], lookup: [] });
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
@@ -2192,11 +2331,12 @@ export default function Home() {
   }, [storageReady, notes, workspaceStorageMode]);
 
   function loadCachedCalendarEvents() {
-    const cachedEvents = loadStoredItems(CALENDAR_EVENTS_KEY, { today: [], week: [], month: [] });
+    const cachedEvents = loadStoredItems(CALENDAR_EVENTS_KEY, { today: [], week: [], month: [], lookup: [] });
     return {
       today: cachedEvents.today || [],
       week: cachedEvents.week || [],
       month: cachedEvents.month || cachedEvents.week || [],
+      lookup: cachedEvents.lookup || cachedEvents.month || cachedEvents.week || [],
     };
   }
 
@@ -2230,6 +2370,7 @@ export default function Home() {
         today: data?.today || [],
         week: data?.week || [],
         month: data?.month || data?.week || [],
+        lookup: data?.lookup || data?.month || data?.week || [],
       };
       setCalendarEvents(nextCalendarEvents);
       window.localStorage.setItem(CALENDAR_EVENTS_KEY, JSON.stringify(nextCalendarEvents));
@@ -2241,10 +2382,10 @@ export default function Home() {
         setCalendarEvents(cachedEvents);
         setCalendarStatus("ready");
       } else if (status === "authenticated") {
-        setCalendarEvents({ today: [], week: [], month: [] });
+        setCalendarEvents({ today: [], week: [], month: [], lookup: [] });
         setCalendarStatus("fallback");
       } else {
-        setCalendarEvents({ today: agendaItems, week: agendaItems, month: agendaItems });
+        setCalendarEvents({ today: agendaItems, week: agendaItems, month: agendaItems, lookup: agendaItems });
         setCalendarStatus("fallback");
       }
     }
@@ -2476,7 +2617,7 @@ export default function Home() {
   async function handleLogout() {
     window.localStorage.removeItem(CALENDAR_EVENTS_KEY);
     window.localStorage.removeItem(DRIVE_FILES_KEY);
-    setCalendarEvents({ today: [], week: [], month: [] });
+    setCalendarEvents({ today: [], week: [], month: [], lookup: [] });
     setDriveFilesData([]);
     setCalendarStatus("idle");
     setDriveStatus("idle");

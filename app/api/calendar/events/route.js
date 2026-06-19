@@ -60,7 +60,10 @@ function getDateRange() {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   monthEnd.setHours(23, 59, 59, 999);
 
-  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd };
+  const lookupEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+  lookupEnd.setHours(23, 59, 59, 999);
+
+  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd };
 }
 
 async function readGoogleError(response) {
@@ -86,10 +89,10 @@ export async function GET() {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
-    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd } = getDateRange();
+    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd } = getDateRange();
     const params = new URLSearchParams({
       timeMin: monthStart.toISOString(),
-      timeMax: monthEnd.toISOString(),
+      timeMax: lookupEnd.toISOString(),
       singleEvents: "true",
       orderBy: "startTime",
       maxResults: "100",
@@ -111,12 +114,16 @@ export async function GET() {
     }
 
     const data = await response.json();
-    const monthEvents = (data.items || []).map(normalizeEvent);
-    const todayEvents = monthEvents.filter((event) => {
+    const lookupEvents = (data.items || []).map(normalizeEvent);
+    const monthEvents = lookupEvents.filter((event) => {
+      const start = new Date(event.start);
+      return start >= monthStart && start <= monthEnd;
+    });
+    const todayEvents = lookupEvents.filter((event) => {
       const start = new Date(event.start);
       return start >= todayStart && start < tomorrowStart;
     });
-    const weekEvents = monthEvents.filter((event) => {
+    const weekEvents = lookupEvents.filter((event) => {
       const start = new Date(event.start);
       return start >= todayStart && start <= weekEnd;
     });
@@ -125,6 +132,7 @@ export async function GET() {
       today: todayEvents,
       week: weekEvents,
       month: monthEvents,
+      lookup: lookupEvents,
       source: "google-calendar",
     });
   } catch (error) {
