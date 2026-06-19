@@ -1533,11 +1533,15 @@ function getCalendarEditDraft(event) {
 function CalendarEditModal({ event, status, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => getCalendarEditDraft(event));
   const [submitStatus, setSubmitStatus] = useState("idle");
+  const [deleteStatus, setDeleteStatus] = useState("idle");
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     setDraft(getCalendarEditDraft(event));
     setSubmitStatus("idle");
+    setDeleteStatus("idle");
+    setIsConfirmingDelete(false);
     setMessage("");
   }, [event]);
 
@@ -1545,6 +1549,46 @@ function CalendarEditModal({ event, status, onClose, onSaved }) {
 
   function updateDraft(field, value) {
     setDraft((currentDraft) => ({ ...currentDraft, [field]: value }));
+  }
+
+  async function handleDelete() {
+    if (!isConfirmingDelete) {
+      setIsConfirmingDelete(true);
+      setMessage("정말 삭제할까요? 한 번 더 삭제를 누르면 Google Calendar에서도 삭제됩니다.");
+      return;
+    }
+
+    if (status !== "authenticated") {
+      setDeleteStatus("error");
+      setMessage("Google 계정을 연결하면 일정을 삭제할 수 있어요.");
+      return;
+    }
+
+    setDeleteStatus("loading");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/calendar/delete", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const { data, text } = await readApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response, data, text, "일정 삭제에 실패했습니다."));
+      }
+
+      setDeleteStatus("success");
+      setMessage(data?.message || "일정이 삭제되었습니다.");
+      await onSaved();
+      onClose();
+    } catch (error) {
+      setDeleteStatus("error");
+      setMessage(error.message || "일정 삭제에 실패했습니다.");
+    }
   }
 
   async function handleSubmit(submitEvent) {
@@ -1556,6 +1600,7 @@ function CalendarEditModal({ event, status, onClose, onSaved }) {
       return;
     }
 
+    setIsConfirmingDelete(false);
     setSubmitStatus("loading");
     setMessage("");
 
@@ -1659,22 +1704,36 @@ function CalendarEditModal({ event, status, onClose, onSaved }) {
               {message}
             </p>
           )}
-          <div className="flex justify-end gap-2 md:col-span-2">
+          <div className="flex flex-col gap-2 md:col-span-2 sm:flex-row sm:items-center sm:justify-between">
             <button
               type="button"
-              onClick={onClose}
-              disabled={submitStatus === "loading"}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleDelete}
+              disabled={submitStatus === "loading" || deleteStatus === "loading"}
+              className={`rounded-lg border px-4 py-2.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                isConfirmingDelete
+                  ? "border-rose-300/40 bg-rose-400/20 text-rose-100 hover:bg-rose-400/30"
+                  : "border-rose-300/20 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20"
+              }`}
             >
-              취소
+              {deleteStatus === "loading" ? "삭제 중..." : isConfirmingDelete ? "정말 삭제" : "삭제"}
             </button>
-            <button
-              type="submit"
-              disabled={submitStatus === "loading"}
-              className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitStatus === "loading" ? "저장 중..." : "수정 저장"}
-            </button>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitStatus === "loading" || deleteStatus === "loading"}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={submitStatus === "loading" || deleteStatus === "loading"}
+                className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitStatus === "loading" ? "저장 중..." : "수정 저장"}
+              </button>
+            </div>
           </div>
         </form>
       </div>
