@@ -2797,12 +2797,19 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, todayEventTotal, dr
   );
 }
 
-function WorkspaceStorageNotice({ mode, status }) {
+function getWorkspaceStorageErrorMessage(errorCode) {
+  if (errorCode === "SUPABASE_NOT_CONFIGURED") return "Supabase 서버 환경변수가 설정되지 않았습니다.";
+  if (errorCode === "SUPABASE_QUERY_FAILED") return "Supabase 데이터 조회에 실패했습니다. 서버 로그에서 테이블/권한 오류를 확인해주세요.";
+  if (errorCode === "UNAUTHORIZED") return "Google 로그인 세션을 확인하지 못했습니다.";
+  return "Google 계정과 Supabase 연결이 정상화되면 계정 기준 데이터로 다시 동기화됩니다.";
+}
+
+function WorkspaceStorageNotice({ mode, status, errorCode }) {
   if (status !== "authenticated" || mode !== "local") return null;
 
   return (
     <div className="mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50">
-      임시 로컬 데이터로 표시 중입니다. Google 계정과 Supabase 연결이 정상화되면 계정 기준 데이터로 다시 동기화됩니다.
+      임시 로컬 데이터로 표시 중입니다. {getWorkspaceStorageErrorMessage(errorCode)}
     </div>
   );
 }
@@ -2840,7 +2847,8 @@ export default function Home() {
   const [deletingDriveFileId, setDeletingDriveFileId] = useState(null);
   const [driveDeleteMessage, setDriveDeleteMessage] = useState("");
   const [driveDeleteMessageType, setDriveDeleteMessageType] = useState("error");
-  const [workspaceStorageMode, setWorkspaceStorageMode] = useState("local");
+  const [workspaceStorageMode, setWorkspaceStorageMode] = useState("loading");
+  const [workspaceStorageErrorCode, setWorkspaceStorageErrorCode] = useState("");
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const userEmail = session?.user?.email || null;
 
@@ -2875,6 +2883,7 @@ export default function Home() {
         setTasks(localWorkspace.tasks);
         setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode("");
         setStorageReady(true);
         return;
       }
@@ -2903,20 +2912,28 @@ export default function Home() {
         setTasks(remoteTasks);
         setNotes(remoteNotes);
         setWorkspaceStorageMode("supabase");
+        setWorkspaceStorageErrorCode("");
         window.localStorage.removeItem(TASKS_KEY);
         window.localStorage.removeItem(NOTES_KEY);
       } catch (error) {
-        console.warn("Supabase workspace load failed, using localStorage fallback:", error);
+        console.warn("Supabase workspace load failed, using localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         if (!isActive) return;
         setTasks(localWorkspace.tasks);
         setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_LOAD_FAILED");
       } finally {
         if (isActive) setStorageReady(true);
       }
     }
 
     setStorageReady(false);
+    setWorkspaceStorageMode("loading");
+    setWorkspaceStorageErrorCode("");
     loadWorkspaceData();
 
     return () => {
@@ -3228,6 +3245,7 @@ export default function Home() {
     setTasks(remoteTasks);
     setNotes(remoteNotes);
     setWorkspaceStorageMode("supabase");
+    setWorkspaceStorageErrorCode("");
     window.localStorage.removeItem(TASKS_KEY);
     window.localStorage.removeItem(NOTES_KEY);
   }
@@ -3263,8 +3281,13 @@ export default function Home() {
         );
         await refreshWorkspaceFromSupabase();
       } catch (error) {
-        console.warn("Supabase task create failed, keeping localStorage fallback:", error);
+        console.warn("Supabase task create failed, keeping localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
       }
     }
   }
@@ -3284,8 +3307,13 @@ export default function Home() {
         await updateTaskInSupabase(userEmail, nextTask);
         await refreshWorkspaceFromSupabase();
       } catch (error) {
-        console.warn("Supabase task update failed, keeping localStorage fallback:", error);
+        console.warn("Supabase task update failed, keeping localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
       }
     }
   }
@@ -3298,8 +3326,13 @@ export default function Home() {
         await deleteTaskFromSupabase(userEmail, taskId);
         await refreshWorkspaceFromSupabase();
       } catch (error) {
-        console.warn("Supabase task delete failed, keeping localStorage fallback:", error);
+        console.warn("Supabase task delete failed, keeping localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
       }
     }
   }
@@ -3323,8 +3356,13 @@ export default function Home() {
           await updateNoteInSupabase(userEmail, updatedNote);
           await refreshWorkspaceFromSupabase();
         } catch (error) {
-          console.warn("Supabase note update failed, keeping localStorage fallback:", error);
+          console.warn("Supabase note update failed, keeping localStorage fallback:", {
+            code: error?.code,
+            status: error?.status,
+            message: error?.message,
+          });
           setWorkspaceStorageMode("local");
+          setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
         }
       }
       setEditingNoteId(null);
@@ -3347,8 +3385,13 @@ export default function Home() {
         );
         await refreshWorkspaceFromSupabase();
       } catch (error) {
-        console.warn("Supabase note create failed, keeping localStorage fallback:", error);
+        console.warn("Supabase note create failed, keeping localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
       }
     }
   }
@@ -3360,8 +3403,13 @@ export default function Home() {
         await deleteNoteFromSupabase(userEmail, noteId);
         await refreshWorkspaceFromSupabase();
       } catch (error) {
-        console.warn("Supabase note delete failed, keeping localStorage fallback:", error);
+        console.warn("Supabase note delete failed, keeping localStorage fallback:", {
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+        });
         setWorkspaceStorageMode("local");
+        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
       }
     }
     if (editingNoteId === noteId) {
@@ -3681,7 +3729,7 @@ export default function Home() {
 
           <div className="workspace-scrollbar flex-1 overflow-y-auto p-4 md:p-8">
             <ViewTitle activeView={activeView} />
-            <WorkspaceStorageNotice mode={workspaceStorageMode} status={status} />
+            <WorkspaceStorageNotice mode={workspaceStorageMode} status={status} errorCode={workspaceStorageErrorCode} />
             {activeContent[activeView]}
           </div>
         </section>

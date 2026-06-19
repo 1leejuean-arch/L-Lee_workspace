@@ -16,22 +16,31 @@ async function getUserEmail() {
   return session?.user?.email || null;
 }
 
-function jsonError(message, status = 500) {
-  return Response.json({ error: message }, { status });
+function jsonError(error, status = 500, details) {
+  return Response.json({ error, ...(details ? { details } : {}) }, { status });
 }
 
-function getSupabaseErrorMessage(error, fallback) {
+function getSupabaseErrorCode(error) {
   if (error?.message?.includes("Supabase server environment variables")) {
-    return "Supabase 연결을 확인해주세요.";
+    return "SUPABASE_NOT_CONFIGURED";
   }
 
-  return fallback;
+  return "SUPABASE_QUERY_FAILED";
+}
+
+function logSupabaseQueryError(context, error) {
+  console.error(context, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+  });
 }
 
 export async function GET() {
   try {
     const userEmail = await getUserEmail();
-    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+    if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
@@ -43,19 +52,19 @@ export async function GET() {
     if (error) throw error;
     return Response.json({ tasks: (data || []).map(mapTaskRow) });
   } catch (error) {
-    console.error("Tasks GET failed:", error);
-    return jsonError(getSupabaseErrorMessage(error, "할 일을 불러오지 못했습니다."));
+    logSupabaseQueryError("Tasks GET failed", error);
+    return jsonError(getSupabaseErrorCode(error), 500);
   }
 }
 
 export async function POST(request) {
   try {
     const userEmail = await getUserEmail();
-    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+    if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const body = await request.json().catch(() => ({}));
     const title = body.title?.trim();
-    if (!title) return jsonError("할 일 제목이 필요합니다.", 400);
+    if (!title) return jsonError("TASK_TITLE_REQUIRED", 400);
 
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
@@ -72,18 +81,18 @@ export async function POST(request) {
     if (error) throw error;
     return Response.json({ task: mapTaskRow(data) });
   } catch (error) {
-    console.error("Tasks POST failed:", error);
-    return jsonError(getSupabaseErrorMessage(error, "할 일을 저장하지 못했습니다."));
+    logSupabaseQueryError("Tasks POST failed", error);
+    return jsonError(getSupabaseErrorCode(error), 500);
   }
 }
 
 export async function PATCH(request) {
   try {
     const userEmail = await getUserEmail();
-    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+    if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const body = await request.json().catch(() => ({}));
-    if (!body.id) return jsonError("수정할 할 일 ID가 필요합니다.", 400);
+    if (!body.id) return jsonError("TASK_ID_REQUIRED", 400);
 
     const supabase = getSupabaseServerClient();
     const { error } = await supabase
@@ -100,18 +109,18 @@ export async function PATCH(request) {
     if (error) throw error;
     return Response.json({ ok: true });
   } catch (error) {
-    console.error("Tasks PATCH failed:", error);
-    return jsonError(getSupabaseErrorMessage(error, "할 일을 수정하지 못했습니다."));
+    logSupabaseQueryError("Tasks PATCH failed", error);
+    return jsonError(getSupabaseErrorCode(error), 500);
   }
 }
 
 export async function DELETE(request) {
   try {
     const userEmail = await getUserEmail();
-    if (!userEmail) return jsonError("로그인이 필요합니다.", 401);
+    if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const body = await request.json().catch(() => ({}));
-    if (!body.id) return jsonError("삭제할 할 일 ID가 필요합니다.", 400);
+    if (!body.id) return jsonError("TASK_ID_REQUIRED", 400);
 
     const supabase = getSupabaseServerClient();
     const { error } = await supabase
@@ -123,7 +132,7 @@ export async function DELETE(request) {
     if (error) throw error;
     return Response.json({ ok: true });
   } catch (error) {
-    console.error("Tasks DELETE failed:", error);
-    return jsonError(getSupabaseErrorMessage(error, "할 일을 삭제하지 못했습니다."));
+    logSupabaseQueryError("Tasks DELETE failed", error);
+    return jsonError(getSupabaseErrorCode(error), 500);
   }
 }
