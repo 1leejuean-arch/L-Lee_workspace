@@ -1791,27 +1791,46 @@ function QuickLaunchView() {
   );
 }
 
-function SearchResultsPanel({ results, onSelect }) {
+const DEFAULT_SEARCH_RESULT_LIMIT = 5;
+
+function SearchResultsPanel({ results, onSelect, expanded, onToggleExpanded }) {
+  const hasMoreResults = results.length > DEFAULT_SEARCH_RESULT_LIMIT;
+  const visibleResults = expanded ? results : results.slice(0, DEFAULT_SEARCH_RESULT_LIMIT);
+  const hiddenResultCount = Math.max(results.length - DEFAULT_SEARCH_RESULT_LIMIT, 0);
+
   return (
     <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
       {results.length > 0 ? (
-        <div className="max-h-96 overflow-y-auto p-2">
-          {results.map((result) => (
+        <>
+          <div className="max-h-[60vh] overflow-y-auto p-2 sm:max-h-96">
+            {visibleResults.map((result) => (
+              <button
+                key={result.id}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onSelect(result)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-white/[0.07]"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-slate-100">{result.title}</span>
+                  <span className="mt-1 block truncate text-xs text-slate-500">{result.helper}</span>
+                </span>
+                <span className="shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{result.type}</span>
+              </button>
+            ))}
+          </div>
+          {hasMoreResults && (
             <button
-              key={result.id}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onSelect(result)}
-              className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-white/[0.07]"
+              onClick={onToggleExpanded}
+              className="flex w-full items-center justify-between border-t border-white/10 px-4 py-3 text-xs text-slate-400 transition hover:bg-white/[0.06] hover:text-cyan-100"
             >
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-slate-100">{result.title}</span>
-                <span className="mt-1 block truncate text-xs text-slate-500">{result.helper}</span>
-              </span>
-              <span className="shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{result.type}</span>
+              <span>총 {results.length}개 결과</span>
+              <span>{expanded ? "접기" : `${hiddenResultCount}개 더 보기`}</span>
             </button>
-          ))}
-        </div>
+          )}
+        </>
       ) : (
         <p className="p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>
       )}
@@ -3269,6 +3288,7 @@ export default function Home() {
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState("");
   const [themeMode, setThemeMode] = useState("dark-glass");
@@ -3629,7 +3649,7 @@ export default function Home() {
       })),
     ];
 
-    return items.filter((item) => matchesSearchQuery(item.searchText, query)).slice(0, 8);
+    return items.filter((item) => matchesSearchQuery(item.searchText, query));
   }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, notes, searchQuery, tasks]);
 
   const notifications = useMemo(() => {
@@ -3683,6 +3703,7 @@ export default function Home() {
     if (result.href) window.open(result.href, "_blank", "noopener,noreferrer");
     if (result.view) setActiveView(result.view);
     setSearchQuery("");
+    setIsSearchExpanded(false);
     setIsSearchFocused(false);
   }
 
@@ -4267,6 +4288,7 @@ export default function Home() {
                   value={searchQuery}
                   onChange={(event) => {
                     setSearchQuery(event.target.value);
+                    setIsSearchExpanded(false);
                     setIsSearchFocused(true);
                   }}
                   onFocus={() => setIsSearchFocused(true)}
@@ -4277,6 +4299,7 @@ export default function Home() {
                     }
                     if (event.key === "Escape") {
                       setSearchQuery("");
+                      setIsSearchExpanded(false);
                       setIsSearchFocused(false);
                     }
                   }}
@@ -4289,6 +4312,7 @@ export default function Home() {
                     aria-label="검색어 지우기"
                     onClick={() => {
                       setSearchQuery("");
+                      setIsSearchExpanded(false);
                       setIsSearchFocused(false);
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-white/10 hover:text-white"
@@ -4297,7 +4321,12 @@ export default function Home() {
                   </button>
                 )}
                 {isSearchFocused && searchQuery.trim() && (
-                  <SearchResultsPanel results={searchResults} onSelect={openSearchResult} />
+                  <SearchResultsPanel
+                    results={searchResults}
+                    onSelect={openSearchResult}
+                    expanded={isSearchExpanded}
+                    onToggleExpanded={() => setIsSearchExpanded((isExpanded) => !isExpanded)}
+                  />
                 )}
               </div>
               <div className="flex items-center gap-2">
