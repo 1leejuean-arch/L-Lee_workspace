@@ -63,6 +63,9 @@ const NOTES_KEY = "l-lee-workspace.notes";
 const CALENDAR_EVENTS_KEY = "l-lee-workspace.calendarEvents";
 const DRIVE_FILES_KEY = "l-lee-workspace.driveFiles";
 const THEME_KEY = "l-lee-workspace.theme";
+const stableInitialDate = new Date(2026, 0, 1);
+const stableInitialDateLabel = "날짜를 불러오는 중";
+const stableGreetingText = "좋은 하루예요";
 
 const themeOptions = [
   {
@@ -1188,7 +1191,7 @@ function ViewTitle({ activeView }) {
   );
 }
 
-function MiniCalendar({ monthDays, markedDays, currentDay, visibleDate = new Date(), onMonthChange, onDateSelect }) {
+function MiniCalendar({ monthDays, markedDays, currentDay, visibleDate = stableInitialDate, onMonthChange, onDateSelect }) {
   const monthLabel = new Intl.DateTimeFormat("ko-KR", {
     year: "numeric",
     month: "long",
@@ -1837,7 +1840,7 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -1846,7 +1849,7 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
     { key: "month", label: "이번 달 일정" },
   ];
   const selectedSchedule = scheduleOptions.find((option) => option.key === scheduleRange) || scheduleOptions[0];
-  const selectedScheduleEvents = getDashboardScheduleEvents(calendarEvents, scheduleRange);
+  const selectedScheduleEvents = getDashboardScheduleEvents(calendarEvents, scheduleRange, todayDate);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
@@ -2309,7 +2312,7 @@ function CalendarEditModal({ event, status, onClose, onSaved }) {
   );
 }
 
-function getDateInputValue(date = new Date()) {
+function getDateInputValue(date = stableInitialDate) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -2336,7 +2339,7 @@ function isSameLocalDay(date, target) {
   return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth() && date.getDate() === target.getDate();
 }
 
-function getLocalWeekRange(date = new Date()) {
+function getLocalWeekRange(date = stableInitialDate) {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - start.getDay());
@@ -2348,9 +2351,9 @@ function getLocalWeekRange(date = new Date()) {
   return { start, end };
 }
 
-function getDashboardScheduleEvents(calendarEvents, range) {
+function getDashboardScheduleEvents(calendarEvents, range, todayDate = stableInitialDate) {
   const monthEvents = calendarEvents.month || [];
-  const now = new Date();
+  const now = todayDate;
 
   if (range === "today") {
     return monthEvents.filter((event) => {
@@ -2380,7 +2383,7 @@ function getScheduleEmptyMessage(range, status) {
   return "오늘 예정된 일정이 없습니다.";
 }
 
-function getCalendarMarkedDays(calendarEvents, visibleDate = new Date()) {
+function getCalendarMarkedDays(calendarEvents, visibleDate = stableInitialDate) {
   const markedDays = new Set();
   const monthEvents = calendarEvents.month || [];
 
@@ -2395,7 +2398,7 @@ function getCalendarMarkedDays(calendarEvents, visibleDate = new Date()) {
   return Array.from(markedDays);
 }
 
-function getCalendarScopeLabel(mode, selectedDate, visibleDate = new Date()) {
+function getCalendarScopeLabel(mode, selectedDate, visibleDate = stableInitialDate) {
   if (mode === "day") {
     return new Intl.DateTimeFormat("ko-KR", {
       month: "long",
@@ -2412,7 +2415,7 @@ function getCalendarScopeLabel(mode, selectedDate, visibleDate = new Date()) {
 
 function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthChange, calendarEvents, calendarStatus, status, onCalendarCreated }) {
   const [scheduleMode, setScheduleMode] = useState("week");
-  const [selectedDate, setSelectedDate] = useState(getDateInputValue());
+  const [selectedDate, setSelectedDate] = useState(() => getDateInputValue(stableInitialDate));
   const [editingEvent, setEditingEvent] = useState(null);
   const monthEvents = calendarEvents.month || calendarEvents.week || [];
   const selectedEvents =
@@ -2430,6 +2433,10 @@ function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthC
     setSelectedDate(dateValue);
     setScheduleMode("day");
   };
+
+  useEffect(() => {
+    setSelectedDate(getDateInputValue(new Date()));
+  }, []);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
@@ -3183,10 +3190,7 @@ export default function Home() {
   const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [], lookup: [] });
-  const [visibleCalendarDate, setVisibleCalendarDate] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
+  const [visibleCalendarDate, setVisibleCalendarDate] = useState(stableInitialDate);
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
@@ -3196,28 +3200,52 @@ export default function Home() {
   const [driveDeleteMessageType, setDriveDeleteMessageType] = useState("error");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("loading");
   const [workspaceStorageErrorCode, setWorkspaceStorageErrorCode] = useState("");
-  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
+  const [clientReady, setClientReady] = useState(false);
+  const [todayDate, setTodayDate] = useState(stableInitialDate);
+  const [todayLabel, setTodayLabel] = useState(stableInitialDateLabel);
+  const [currentHour, setCurrentHour] = useState(null);
   const userEmail = session?.user?.email || null;
 
   useEffect(() => {
-    const updateCurrentHour = () => setCurrentHour(new Date().getHours());
-    updateCurrentHour();
-    const intervalId = window.setInterval(updateCurrentHour, 60 * 1000);
+    const updateBrowserTime = (syncVisibleMonth = false) => {
+      const now = new Date();
+      setClientReady(true);
+      setTodayDate(now);
+      setCurrentHour(now.getHours());
+      setTodayLabel(
+        new Intl.DateTimeFormat("ko-KR", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }).format(now),
+      );
+      if (syncVisibleMonth) {
+        setVisibleCalendarDate(new Date(now.getFullYear(), now.getMonth(), 1));
+      }
+    };
+
+    updateBrowserTime(true);
+    const intervalId = window.setInterval(() => updateBrowserTime(false), 60 * 1000);
     return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
+    if (!clientReady) return;
+
     const storedTheme = window.localStorage.getItem(THEME_KEY);
     if (themeOptions.some((theme) => theme.key === storedTheme)) {
       setThemeMode(storedTheme);
     }
-  }, []);
+  }, [clientReady]);
 
   useEffect(() => {
+    if (!clientReady) return;
     window.localStorage.setItem(THEME_KEY, themeMode);
-  }, [themeMode]);
+  }, [clientReady, themeMode]);
 
   useEffect(() => {
+    if (!clientReady) return;
     if (status === "loading") return;
 
     let isActive = true;
@@ -3286,7 +3314,7 @@ export default function Home() {
     return () => {
       isActive = false;
     };
-  }, [status, userEmail]);
+  }, [clientReady, status, userEmail]);
 
   useEffect(() => {
     if (storageReady && workspaceStorageMode === "local") {
@@ -3366,6 +3394,7 @@ export default function Home() {
   }
 
   useEffect(() => {
+    if (!clientReady) return;
     if (status === "loading") return;
 
     if (status !== "authenticated") {
@@ -3379,9 +3408,10 @@ export default function Home() {
     loadCalendarEvents(controller.signal, visibleCalendarDate);
 
     return () => controller.abort();
-  }, [status, visibleCalendarDate]);
+  }, [clientReady, status, visibleCalendarDate]);
 
   useEffect(() => {
+    if (!clientReady) return;
     if (status === "loading") return;
 
     if (status !== "authenticated") {
@@ -3435,31 +3465,21 @@ export default function Home() {
     loadDriveFiles();
 
     return () => controller.abort();
-  }, [status]);
-
-  const todayLabel = useMemo(() => {
-    return new Intl.DateTimeFormat("ko-KR", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date());
-  }, []);
+  }, [clientReady, status]);
 
   const completedCount = tasks.filter((task) => task.completed).length;
   const signedInUser = session?.user;
   const displayName = signedInUser?.name || "주언";
-  const greetingText = getTimeBasedGreeting(currentHour);
+  const greetingText = currentHour === null ? stableGreetingText : getTimeBasedGreeting(currentHour);
   const visibleMonthStartDay = new Date(visibleCalendarDate.getFullYear(), visibleCalendarDate.getMonth(), 1).getDay();
   const currentMonthLength = new Date(visibleCalendarDate.getFullYear(), visibleCalendarDate.getMonth() + 1, 0).getDate();
   const monthDays = [
     ...Array.from({ length: visibleMonthStartDay }, () => null),
     ...Array.from({ length: currentMonthLength }, (_, index) => index + 1),
   ];
-  const now = new Date();
   const currentDay =
-    visibleCalendarDate.getFullYear() === now.getFullYear() && visibleCalendarDate.getMonth() === now.getMonth()
-      ? now.getDate()
+    visibleCalendarDate.getFullYear() === todayDate.getFullYear() && visibleCalendarDate.getMonth() === todayDate.getMonth()
+      ? todayDate.getDate()
       : null;
   const markedDays = useMemo(() => getCalendarMarkedDays(calendarEvents, visibleCalendarDate), [calendarEvents, visibleCalendarDate]);
   const searchResults = useMemo(() => {
@@ -3966,6 +3986,7 @@ export default function Home() {
         markedDays={markedDays}
         currentDay={currentDay}
         visibleCalendarDate={visibleCalendarDate}
+        todayDate={todayDate}
         session={session}
         status={status}
         calendarEvents={calendarEvents}
