@@ -992,6 +992,36 @@ function getNextTaskSortOrder(tasks) {
   return maxSortOrder + 1;
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSearchTokens(query) {
+  return normalizeSearchText(query).split(" ").filter(Boolean);
+}
+
+function matchesSearchQuery(searchText, query) {
+  const normalizedSearchText = normalizeSearchText(searchText);
+  const normalizedQuery = normalizeSearchText(query);
+  const tokens = getSearchTokens(query);
+
+  if (!normalizedQuery) return false;
+  if (normalizedSearchText.includes(normalizedQuery)) return true;
+  return tokens.some((token) => normalizedSearchText.includes(token));
+}
+
+function uniqueById(items) {
+  const seenIds = new Set();
+  return items.filter((item) => {
+    if (!item?.id || seenIds.has(item.id)) return false;
+    seenIds.add(item.id);
+    return true;
+  });
+}
+
 const noteTranslations = {
   "API adapter plan": {
     title: "API 어댑터 계획",
@@ -3537,8 +3567,14 @@ export default function Home() {
       : null;
   const markedDays = useMemo(() => getCalendarMarkedDays(calendarEvents, visibleCalendarDate), [calendarEvents, visibleCalendarDate]);
   const searchResults = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = searchQuery.trim();
     if (!query) return [];
+    const searchableCalendarEvents = uniqueById([
+      ...(calendarEvents.lookup || []),
+      ...(calendarEvents.month || []),
+      ...(calendarEvents.week || []),
+      ...(calendarEvents.today || []),
+    ]);
 
     const items = [
       ...sidebarItems.map((item) => ({
@@ -3555,7 +3591,7 @@ export default function Home() {
         helper: app.description,
         type: "바로가기",
         href: app.href,
-        searchText: `${app.name} ${app.description}`,
+        searchText: `${app.name} ${app.description} ${(app.aliases || []).join(" ")}`,
       })),
       ...tasks.map((task) => ({
         id: `task-${task.id}`,
@@ -3563,7 +3599,7 @@ export default function Home() {
         helper: task.completed ? "완료된 할 일" : "진행 중인 할 일",
         type: "할 일",
         view: "Tasks",
-        searchText: `${task.title} ${task.description || ""} ${task.priority || ""} ${(task.steps || []).map((step) => step.title).join(" ")}`,
+        searchText: `${task.title} ${task.description || ""} ${task.priority || ""} ${(task.steps || []).map((step) => `${step.title} ${step.priority || ""}`).join(" ")}`,
       })),
       ...notes.map((note) => ({
         id: `note-${note.id}`,
@@ -3573,14 +3609,14 @@ export default function Home() {
         view: "Notes",
         searchText: `${note.title} ${note.body} ${note.tag || ""}`,
       })),
-      ...calendarEvents.week.map((event) => ({
+      ...searchableCalendarEvents.map((event) => ({
         id: `event-${event.id}`,
         title: event.title,
         helper: `${event.time || ""} ${event.place || ""}`,
         type: "일정",
         view: "Calendar",
         href: event.htmlLink,
-        searchText: `${event.title} ${event.time || ""} ${event.place || ""}`,
+        searchText: `${event.title} ${event.description || ""} ${event.summary || ""} ${event.notes || ""} ${event.time || ""} ${event.place || ""} ${event.location || ""}`,
       })),
       ...driveFilesData.map((file) => ({
         id: `drive-${file.id}`,
@@ -3589,12 +3625,12 @@ export default function Home() {
         type: "파일",
         view: "Drive",
         href: file.link,
-        searchText: `${file.name} ${file.owner || ""} ${file.mimeType || ""}`,
+        searchText: `${file.name} ${file.owner || ""} ${file.mimeType || ""} ${file.description || ""} ${file.type || ""}`,
       })),
     ];
 
-    return items.filter((item) => item.searchText.toLowerCase().includes(query)).slice(0, 8);
-  }, [calendarEvents.week, driveFilesData, notes, searchQuery, tasks]);
+    return items.filter((item) => matchesSearchQuery(item.searchText, query)).slice(0, 8);
+  }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, notes, searchQuery, tasks]);
 
   const notifications = useMemo(() => {
     const remainingTasks = tasks.filter((task) => !task.completed).length;
