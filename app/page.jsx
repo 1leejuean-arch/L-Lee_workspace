@@ -2512,16 +2512,6 @@ function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthC
         />
         <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>
-      <GlassCard className="xl:col-span-12">
-        <div className="grid gap-4 p-5 md:grid-cols-3">
-          {["집중 시간", "회의", "개인 회고"].map((label, index) => (
-            <div key={label} className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
-              <p className="text-sm font-medium text-white">{label}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">목업 캘린더 영역 {index + 1}입니다. 나중에 Google 캘린더 일정을 이곳에 연결할 수 있습니다.</p>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
       <CalendarEditModal
         event={editingEvent}
         status={status}
