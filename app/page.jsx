@@ -11,6 +11,7 @@ import {
   fetchTasksFromSupabase,
   normalizeWorkspaceTasks,
   updateNoteInSupabase,
+  updateTaskStepsInSupabase,
   updateTaskInSupabase,
 } from "../lib/workspaceStorage";
 import {
@@ -929,6 +930,14 @@ function normalizePriority(priority) {
 }
 
 function normalizeTaskSteps(steps) {
+  if (typeof steps === "string") {
+    try {
+      return normalizeTaskSteps(JSON.parse(steps));
+    } catch {
+      return [];
+    }
+  }
+
   if (!Array.isArray(steps)) return [];
 
   return steps
@@ -2658,6 +2667,7 @@ function TasksView({
   updateTaskStepPriority,
   deleteTaskStep,
   moveTaskStep,
+  taskSaveMessage,
 }) {
   const progressWidth = tasks.length ? `${(completedCount / tasks.length) * 100}%` : "0%";
   const { totalSteps, completedSteps, stepProgress } = getTaskStepStats(tasks);
@@ -2667,6 +2677,11 @@ function TasksView({
       <GlassCard className="xl:col-span-8">
         <CardHeader icon={CheckSquare} title="작업 목록" />
         <TaskComposer value={taskInput} onChange={setTaskInput} onQuickAdd={addTask} onCreate={createTask} />
+        {taskSaveMessage && (
+          <div className="mx-5 mt-4 rounded-lg border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+            {taskSaveMessage}
+          </div>
+        )}
         <ProjectTaskList
           tasks={tasks}
           expandedTaskIds={expandedTaskIds}
@@ -3181,6 +3196,7 @@ export default function Home() {
   const [taskInput, setTaskInput] = useState("");
   const [expandedTaskIds, setExpandedTaskIds] = useState([]);
   const [stepDrafts, setStepDrafts] = useState({});
+  const [taskSaveMessage, setTaskSaveMessage] = useState("");
   const [noteDraft, setNoteDraft] = useState({ title: "", body: "", tag: "개인" });
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -3640,18 +3656,46 @@ export default function Home() {
     return createTask({ title });
   }
 
-  async function persistTaskChange(nextTask) {
-    if (workspaceStorageMode !== "supabase" || !userEmail || !nextTask || String(nextTask.id).startsWith("local-")) return;
+  async function persistTaskChange(nextTask, options = {}) {
+    const failureMessage = options.failureMessage || "작업 변경사항을 저장하지 못했습니다.";
+    if (!nextTask) return;
+    if (workspaceStorageMode !== "supabase" || !userEmail || String(nextTask.id).startsWith("local-")) return;
 
     try {
-      await updateTaskInSupabase(userEmail, nextTask);
-      await refreshWorkspaceFromSupabase();
+      const savedTask = await updateTaskInSupabase(userEmail, nextTask);
+      setTaskSaveMessage("");
+      setTasks((currentTasks) =>
+        currentTasks.map((task) => (task.id === nextTask.id ? normalizeTask(savedTask) : task)),
+      );
     } catch (error) {
       console.warn("Supabase task update failed, keeping localStorage fallback:", {
         code: error?.code,
         status: error?.status,
         message: error?.message,
       });
+      setTaskSaveMessage(failureMessage);
+      setWorkspaceStorageMode("local");
+      setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
+    }
+  }
+
+  async function persistTaskSteps(nextTask) {
+    if (!nextTask) return;
+    if (workspaceStorageMode !== "supabase" || !userEmail || String(nextTask.id).startsWith("local-")) return;
+
+    try {
+      const savedTask = await updateTaskStepsInSupabase(userEmail, nextTask.id, nextTask.steps || []);
+      setTaskSaveMessage("");
+      setTasks((currentTasks) =>
+        currentTasks.map((task) => (task.id === nextTask.id ? normalizeTask({ ...task, ...savedTask }) : task)),
+      );
+    } catch (error) {
+      console.error("Supabase task steps save failed:", {
+        code: error?.code,
+        status: error?.status,
+        message: error?.message,
+      });
+      setTaskSaveMessage("세부 단계를 저장하지 못했습니다.");
       setWorkspaceStorageMode("local");
       setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
     }
@@ -3693,14 +3737,11 @@ export default function Home() {
   }
 
   async function toggleTask(taskId) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        nextTask = normalizeTask({ ...task, completed: !task.completed });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    const nextTask = currentTask ? normalizeTask({ ...currentTask, completed: !currentTask.completed }) : null;
+    if (!nextTask) return;
+
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
 
     await persistTaskChange(nextTask);
   }
@@ -3724,14 +3765,11 @@ export default function Home() {
   }
 
   async function updateTaskPriority(taskId, priority) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        nextTask = normalizeTask({ ...task, priority });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    const nextTask = currentTask ? normalizeTask({ ...currentTask, priority }) : null;
+    if (!nextTask) return;
+
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
 
     await persistTaskChange(nextTask);
   }
@@ -3742,95 +3780,85 @@ export default function Home() {
     const title = draft.title.trim();
     if (!title) return;
 
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        const steps = normalizeTaskSteps([
-          ...(task.steps || []),
-          {
-            id: `step-${Date.now()}`,
-            title,
-            completed: false,
-            priority: draft.priority || "보통",
-            order: task.steps?.length || 0,
-          },
-        ]);
-        nextTask = normalizeTask({ ...task, steps });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) return;
+
+    const steps = normalizeTaskSteps([
+      ...(currentTask.steps || []),
+      {
+        id: `step-${Date.now()}`,
+        title,
+        completed: false,
+        priority: draft.priority || "보통",
+        order: currentTask.steps?.length || 0,
+      },
+    ]);
+    const nextTask = normalizeTask({ ...currentTask, steps });
+
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
     setStepDrafts((currentDrafts) => ({ ...currentDrafts, [taskId]: { title: "", priority: draft.priority || "보통" } }));
 
-    await persistTaskChange(nextTask);
+    await persistTaskSteps(nextTask);
   }
 
   async function toggleTaskStep(taskId, stepId) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        const steps = normalizeTaskSteps(
-          (task.steps || []).map((step) => (step.id === stepId ? { ...step, completed: !step.completed } : step)),
-        );
-        nextTask = normalizeTask({ ...task, steps });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) return;
 
-    await persistTaskChange(nextTask);
+    const steps = normalizeTaskSteps(
+      (currentTask.steps || []).map((step) => (step.id === stepId ? { ...step, completed: !step.completed } : step)),
+    );
+    const nextTask = normalizeTask({ ...currentTask, steps });
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
+
+    await persistTaskSteps(nextTask);
   }
 
   async function updateTaskStepPriority(taskId, stepId, priority) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        const steps = normalizeTaskSteps(
-          (task.steps || []).map((step) => (step.id === stepId ? { ...step, priority } : step)),
-        );
-        nextTask = normalizeTask({ ...task, steps });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) return;
 
-    await persistTaskChange(nextTask);
+    const steps = normalizeTaskSteps(
+      (currentTask.steps || []).map((step) => (step.id === stepId ? { ...step, priority } : step)),
+    );
+    const nextTask = normalizeTask({ ...currentTask, steps });
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
+
+    await persistTaskSteps(nextTask);
   }
 
   async function deleteTaskStep(taskId, stepId) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        nextTask = normalizeTask({ ...task, steps: normalizeTaskSteps((task.steps || []).filter((step) => step.id !== stepId)) });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) return;
 
-    await persistTaskChange(nextTask);
+    const nextTask = normalizeTask({
+      ...currentTask,
+      steps: normalizeTaskSteps((currentTask.steps || []).filter((step) => step.id !== stepId)),
+    });
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
+
+    await persistTaskSteps(nextTask);
   }
 
   async function moveTaskStep(taskId, stepId, direction) {
-    let nextTask = null;
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        const steps = normalizeTaskSteps(task.steps || []);
-        const currentIndex = steps.findIndex((step) => step.id === stepId);
-        const nextIndex = currentIndex + direction;
-        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= steps.length) return task;
-        const reorderedSteps = [...steps];
-        const [movedStep] = reorderedSteps.splice(currentIndex, 1);
-        reorderedSteps.splice(nextIndex, 0, movedStep);
-        nextTask = normalizeTask({
-          ...task,
-          steps: reorderedSteps.map((step, index) => ({ ...step, order: index })),
-        });
-        return nextTask;
-      }),
-    );
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) return;
 
-    await persistTaskChange(nextTask);
+    const steps = normalizeTaskSteps(currentTask.steps || []);
+    const currentIndex = steps.findIndex((step) => step.id === stepId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= steps.length) return;
+
+    const reorderedSteps = [...steps];
+    const [movedStep] = reorderedSteps.splice(currentIndex, 1);
+    reorderedSteps.splice(nextIndex, 0, movedStep);
+    const nextTask = normalizeTask({
+      ...currentTask,
+      steps: reorderedSteps.map((step, index) => ({ ...step, order: index })),
+    });
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? nextTask : task)));
+
+    await persistTaskSteps(nextTask);
   }
 
   async function deleteTask(taskId) {
@@ -4064,6 +4092,7 @@ export default function Home() {
         updateTaskStepPriority={updateTaskStepPriority}
         deleteTaskStep={deleteTaskStep}
         moveTaskStep={moveTaskStep}
+        taskSaveMessage={taskSaveMessage}
       />
     ),
     "AI Assistant": (

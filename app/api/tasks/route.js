@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "../../../lib/supabaseServer";
 
 const DEFAULT_PRIORITY = "보통";
 const TASK_COLUMNS = "id,user_email,title,description,completed,priority,steps,sort_order,created_at,updated_at";
+const STEPS_TASK_COLUMNS = "id,user_email,title,completed,steps,created_at";
 const MINIMAL_TASK_COLUMNS = "id,user_email,title,completed,created_at";
 const TASKS_SCHEMA_MISSING_MESSAGE = "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
 const MAX_POSTGRES_INTEGER = 2147483647;
@@ -16,6 +17,14 @@ function normalizePriority(priority) {
 }
 
 function normalizeSteps(steps) {
+  if (typeof steps === "string") {
+    try {
+      return normalizeSteps(JSON.parse(steps));
+    } catch {
+      return [];
+    }
+  }
+
   if (!Array.isArray(steps)) return [];
 
   return steps
@@ -119,6 +128,12 @@ function toLegacyPayload(payload) {
   );
 }
 
+function toStepsPayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ["user_email", "title", "completed", "steps"].includes(key)),
+  );
+}
+
 export async function GET() {
   try {
     const userEmail = await getUserEmail();
@@ -131,6 +146,14 @@ export async function GET() {
       .eq("user_email", userEmail)
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false });
+
+    if (result.error && isMissingColumnError(result.error)) {
+      result = await supabase
+        .from("tasks")
+        .select(STEPS_TASK_COLUMNS)
+        .eq("user_email", userEmail)
+        .order("created_at", { ascending: false });
+    }
 
     if (result.error && isMissingColumnError(result.error)) {
       result = await supabase
@@ -171,6 +194,10 @@ export async function POST(request) {
     let result = await supabase.from("tasks").insert(payload).select(TASK_COLUMNS).single();
 
     if (result.error && isMissingColumnError(result.error)) {
+      result = await supabase.from("tasks").insert(toStepsPayload(payload)).select(STEPS_TASK_COLUMNS).single();
+    }
+
+    if (result.error && isMissingColumnError(result.error)) {
       result = await supabase.from("tasks").insert(toLegacyPayload(payload)).select(MINIMAL_TASK_COLUMNS).single();
     }
 
@@ -203,6 +230,19 @@ export async function PATCH(request) {
       .eq("user_email", userEmail)
       .select(TASK_COLUMNS)
       .single();
+
+    if (result.error && isMissingColumnError(result.error)) {
+      const stepsPayload = toStepsPayload(payload);
+      if (Object.prototype.hasOwnProperty.call(stepsPayload, "steps")) {
+        result = await supabase
+          .from("tasks")
+          .update(stepsPayload)
+          .eq("id", body.id)
+          .eq("user_email", userEmail)
+          .select(STEPS_TASK_COLUMNS)
+          .single();
+      }
+    }
 
     if (result.error && isMissingColumnError(result.error)) {
       logSupabaseQueryError("Tasks PATCH schema missing", result.error);
