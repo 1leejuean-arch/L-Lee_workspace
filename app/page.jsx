@@ -1791,7 +1791,7 @@ function QuickLaunchView() {
   );
 }
 
-const DEFAULT_SEARCH_RESULT_LIMIT = 5;
+const DEFAULT_SEARCH_RESULT_LIMIT = 3;
 
 function SearchResultsPanel({ results, onSelect, expanded, onToggleExpanded }) {
   const hasMoreResults = results.length > DEFAULT_SEARCH_RESULT_LIMIT;
@@ -1799,10 +1799,10 @@ function SearchResultsPanel({ results, onSelect, expanded, onToggleExpanded }) {
   const hiddenResultCount = Math.max(results.length - DEFAULT_SEARCH_RESULT_LIMIT, 0);
 
   return (
-    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
+    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 flex max-h-[70vh] flex-col overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
       {results.length > 0 ? (
         <>
-          <div className="max-h-[60vh] overflow-y-auto p-2 sm:max-h-96">
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {visibleResults.map((result) => (
               <button
                 key={result.id}
