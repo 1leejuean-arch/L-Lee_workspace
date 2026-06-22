@@ -9,6 +9,7 @@ import {
   deleteTaskFromSupabase,
   fetchNotesFromSupabase,
   fetchTasksFromSupabase,
+  normalizeWorkspaceTasks,
   updateNoteInSupabase,
   updateTaskInSupabase,
 } from "../lib/workspaceStorage";
@@ -18,8 +19,10 @@ import {
   CalendarDays,
   Check,
   CheckSquare,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Circle,
   Clock3,
   Cloud,
@@ -908,6 +911,63 @@ const priorityTranslations = {
   Low: "낮음",
 };
 
+const taskPriorityOptions = ["낮음", "보통", "높음"];
+
+const priorityBadgeStyles = {
+  낮음: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+  보통: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
+  높음: "border-rose-300/25 bg-rose-400/10 text-rose-100",
+};
+
+function normalizePriority(priority) {
+  const translatedPriority = priorityTranslations[priority] || priority;
+  return taskPriorityOptions.includes(translatedPriority) ? translatedPriority : "보통";
+}
+
+function normalizeTaskSteps(steps) {
+  if (!Array.isArray(steps)) return [];
+
+  return steps
+    .map((step, index) => ({
+      id: step?.id || `step-${Date.now()}-${index}`,
+      title: String(step?.title || "").trim(),
+      completed: Boolean(step?.completed),
+      priority: normalizePriority(step?.priority),
+      order: Number.isFinite(Number(step?.order)) ? Number(step.order) : index,
+    }))
+    .filter((step) => step.title)
+    .sort((first, second) => first.order - second.order)
+    .map((step, index) => ({ ...step, order: index }));
+}
+
+function normalizeTask(task, index = 0) {
+  return {
+    ...task,
+    id: task?.id || `local-${Date.now()}-${index}`,
+    title: String(task?.title || "").trim(),
+    description: task?.description || "",
+    completed: Boolean(task?.completed),
+    priority: normalizePriority(task?.priority),
+    steps: normalizeTaskSteps(task?.steps),
+    sort_order: Number.isFinite(Number(task?.sort_order)) ? Number(task.sort_order) : 0,
+  };
+}
+
+function normalizeTasks(tasks) {
+  return normalizeWorkspaceTasks(tasks).map(normalizeTask);
+}
+
+function getTaskStepStats(tasks) {
+  const steps = tasks.flatMap((task) => task.steps || []);
+  const completedSteps = steps.filter((step) => step.completed).length;
+
+  return {
+    totalSteps: steps.length,
+    completedSteps,
+    stepProgress: steps.length ? Math.round((completedSteps / steps.length) * 100) : 0,
+  };
+}
+
 const noteTranslations = {
   "API adapter plan": {
     title: "API 어댑터 계획",
@@ -943,11 +1003,12 @@ function loadStoredItems(key, fallback) {
 }
 
 function localizeStoredTasks(storedTasks) {
-  return storedTasks.map((task) => ({
+  return normalizeTasks(storedTasks.map((task) => ({
     ...task,
     title: taskTitleTranslations[task.title] || task.title,
-    priority: priorityTranslations[task.priority] || task.priority,
-  }));
+    priority: normalizePriority(task.priority),
+    steps: normalizeTaskSteps(task.steps),
+  })));
 }
 
 function localizeStoredNotes(storedNotes) {
@@ -1013,14 +1074,20 @@ function CardHeader({ icon: Icon, title, action = true, actionContent = null }) 
   );
 }
 
-function IconButton({ label, onClick, children, tone = "default" }) {
+function IconButton({ label, onClick, children, tone = "default", disabled = false }) {
   const tones = {
     default: "text-slate-400 hover:border-cyan-300/30 hover:bg-white/10 hover:text-white",
     danger: "text-slate-500 hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-200",
   };
 
   return (
-    <button type="button" aria-label={label} onClick={onClick} className={`rounded-lg border border-white/10 p-2 transition ${tones[tone]}`}>
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-lg border border-white/10 p-2 transition disabled:cursor-not-allowed disabled:opacity-40 ${tones[tone]}`}
+    >
       {children}
     </button>
   );
@@ -1302,6 +1369,16 @@ function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "�
   );
 }
 
+function PriorityBadge({ priority }) {
+  const normalizedPriority = normalizePriority(priority);
+
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${priorityBadgeStyles[normalizedPriority]}`}>
+      {normalizedPriority}
+    </span>
+  );
+}
+
 function TaskList({ tasks, onToggle, onDelete, detailed = false }) {
   if (tasks.length === 0) {
     return <p className="p-5 text-sm text-slate-500">아직 할 일이 없습니다. 오늘을 정리할 첫 할 일을 추가해보세요.</p>;
@@ -1337,20 +1414,231 @@ function TaskList({ tasks, onToggle, onDelete, detailed = false }) {
   );
 }
 
-function TaskComposer({ value, onChange, onAdd }) {
+function TaskComposer({ value, onChange, onQuickAdd, onCreate }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [draft, setDraft] = useState({ title: "", description: "", priority: "보통" });
+
+  function openCreatePanel() {
+    setDraft((currentDraft) => ({ ...currentDraft, title: currentDraft.title || value.trim() }));
+    setIsOpen(true);
+  }
+
+  function submitProject(event) {
+    event.preventDefault();
+    const title = draft.title.trim();
+    if (!title) return;
+
+    onCreate({ title, description: draft.description.trim(), priority: draft.priority, steps: [] });
+    setDraft({ title: "", description: "", priority: "보통" });
+    setIsOpen(false);
+  }
+
   return (
-    <form onSubmit={onAdd} className="flex flex-col gap-3 border-b border-white/10 p-5 sm:flex-row">
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="새 할 일을 입력하세요..."
-        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
-      />
-      <button type="submit" className="flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-3 text-sm font-medium text-slate-950 transition hover:bg-cyan-200">
-        <Plus className="h-4 w-4" />
-        할 일 추가
-      </button>
-    </form>
+    <div className="border-b border-white/10 p-5">
+      <form onSubmit={onQuickAdd} className="flex flex-col gap-3 sm:flex-row">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="작업명 또는 빠른 할 일을 입력하세요..."
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+        />
+        <button
+          type="button"
+          onClick={openCreatePanel}
+          className="flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-3 text-sm font-medium text-slate-950 transition hover:bg-cyan-200"
+        >
+          <Plus className="h-4 w-4" />
+          할 일 추가
+        </button>
+      </form>
+      {isOpen && (
+        <form onSubmit={submitProject} className="mt-4 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-4">
+          <div className="grid gap-3">
+            <input
+              value={draft.title}
+              onChange={(event) => setDraft((currentDraft) => ({ ...currentDraft, title: event.target.value }))}
+              placeholder="작업명/업무명"
+              className="rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+            />
+            <textarea
+              value={draft.description}
+              onChange={(event) => setDraft((currentDraft) => ({ ...currentDraft, description: event.target.value }))}
+              placeholder="설명 (선택)"
+              rows={3}
+              className="resize-none rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <select
+                value={draft.priority}
+                onChange={(event) => setDraft((currentDraft) => ({ ...currentDraft, priority: event.target.value }))}
+                className="rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-300/50"
+              >
+                {taskPriorityOptions.map((priority) => (
+                  <option key={priority} value={priority}>{priority}</option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10"
+                >
+                  취소
+                </button>
+                <button type="submit" className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200">
+                  만들기
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function ProjectTaskList({
+  tasks,
+  expandedTaskIds,
+  stepDrafts,
+  onToggleExpanded,
+  onToggleTask,
+  onDeleteTask,
+  onUpdateTaskPriority,
+  onStepDraftChange,
+  onAddStep,
+  onToggleStep,
+  onUpdateStepPriority,
+  onDeleteStep,
+  onMoveStep,
+}) {
+  if (tasks.length === 0) {
+    return <p className="p-5 text-sm text-slate-500">아직 작업이 없습니다. 오늘의 첫 작업을 만들어보세요.</p>;
+  }
+
+  return (
+    <div className="workspace-scrollbar max-h-[68vh] space-y-3 overflow-y-auto p-5">
+      {tasks.map((task) => {
+        const isExpanded = expandedTaskIds.includes(task.id);
+        const steps = task.steps || [];
+        const completedSteps = steps.filter((step) => step.completed).length;
+        const stepProgress = steps.length ? Math.round((completedSteps / steps.length) * 100) : 0;
+
+        return (
+          <article key={task.id} className="rounded-lg border border-white/10 bg-white/[0.035] p-4 transition hover:bg-white/[0.055]">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <button type="button" onClick={() => onToggleTask(task.id)} className="mt-0.5 shrink-0">
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded border ${
+                    task.completed ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-slate-600 text-transparent"
+                  }`}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </span>
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className={`min-w-0 text-sm font-semibold ${task.completed ? "text-slate-500 line-through" : "text-white"}`}>
+                    {task.title}
+                  </h3>
+                  <PriorityBadge priority={task.priority} />
+                </div>
+                {task.description && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-400">{task.description}</p>}
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <span>세부 단계 {completedSteps}/{steps.length}</span>
+                  <span>{stepProgress}% 완료</span>
+                  <select
+                    value={task.priority}
+                    onChange={(event) => onUpdateTaskPriority(task.id, event.target.value)}
+                    className="rounded-md border border-white/10 bg-slate-950/80 px-2 py-1 text-xs text-slate-200 outline-none"
+                  >
+                    {taskPriorityOptions.map((priority) => (
+                      <option key={priority} value={priority}>{priority}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-3 h-1.5 rounded-full bg-slate-800">
+                  <div className="h-1.5 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: `${stepProgress}%` }} />
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <IconButton label={`${task.title} 펼치기`} onClick={() => onToggleExpanded(task.id)}>
+                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </IconButton>
+                <IconButton label={`${task.title} 삭제`} onClick={() => onDeleteTask(task.id)} tone="danger">
+                  <Trash2 className="h-4 w-4" />
+                </IconButton>
+              </div>
+            </div>
+
+            {isExpanded && (
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="space-y-2">
+                  {steps.length === 0 && <p className="rounded-lg bg-white/[0.03] p-3 text-sm text-slate-500">아직 세부 단계가 없습니다.</p>}
+                  {steps.map((step, index) => (
+                    <div key={step.id} className="flex flex-col gap-3 rounded-lg bg-slate-950/35 p-3 sm:flex-row sm:items-center">
+                      <button type="button" onClick={() => onToggleStep(task.id, step.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                        <span
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                            step.completed ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-slate-600 text-transparent"
+                          }`}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                        <span className={`truncate text-sm ${step.completed ? "text-slate-500 line-through" : "text-slate-100"}`}>
+                          {step.title}
+                        </span>
+                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <PriorityBadge priority={step.priority} />
+                        <select
+                          value={step.priority}
+                          onChange={(event) => onUpdateStepPriority(task.id, step.id, event.target.value)}
+                          className="rounded-md border border-white/10 bg-slate-950/80 px-2 py-1 text-xs text-slate-200 outline-none"
+                        >
+                          {taskPriorityOptions.map((priority) => (
+                            <option key={priority} value={priority}>{priority}</option>
+                          ))}
+                        </select>
+                        <IconButton label="위로 이동" onClick={() => onMoveStep(task.id, step.id, -1)} disabled={index === 0}>
+                          <ChevronUp className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton label="아래로 이동" onClick={() => onMoveStep(task.id, step.id, 1)} disabled={index === steps.length - 1}>
+                          <ChevronDown className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton label={`${step.title} 삭제`} onClick={() => onDeleteStep(task.id, step.id)} tone="danger">
+                          <Trash2 className="h-4 w-4" />
+                        </IconButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <form onSubmit={(event) => onAddStep(event, task.id)} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={stepDrafts[task.id]?.title || ""}
+                    onChange={(event) => onStepDraftChange(task.id, { title: event.target.value })}
+                    placeholder="세부 단계 추가"
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+                  />
+                  <select
+                    value={stepDrafts[task.id]?.priority || "보통"}
+                    onChange={(event) => onStepDraftChange(task.id, { priority: event.target.value })}
+                    className="rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none"
+                  >
+                    {taskPriorityOptions.map((priority) => (
+                      <option key={priority} value={priority}>{priority}</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/20">
+                    단계 추가
+                  </button>
+                </form>
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -2332,26 +2620,70 @@ function NotesView({ notes, noteDraft, setNoteDraft, editingNoteId, setEditingNo
   );
 }
 
-function TasksView({ tasks, taskInput, setTaskInput, addTask, toggleTask, deleteTask, completedCount }) {
+function TasksView({
+  tasks,
+  taskInput,
+  setTaskInput,
+  addTask,
+  createTask,
+  toggleTask,
+  deleteTask,
+  completedCount,
+  expandedTaskIds,
+  stepDrafts,
+  toggleTaskExpanded,
+  updateTaskPriority,
+  setStepDraft,
+  addTaskStep,
+  toggleTaskStep,
+  updateTaskStepPriority,
+  deleteTaskStep,
+  moveTaskStep,
+}) {
   const progressWidth = tasks.length ? `${(completedCount / tasks.length) * 100}%` : "0%";
+  const { totalSteps, completedSteps, stepProgress } = getTaskStepStats(tasks);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-8">
-        <CardHeader icon={CheckSquare} title="할 일 목록" />
-        <TaskComposer value={taskInput} onChange={setTaskInput} onAdd={addTask} />
-        <TaskList tasks={tasks} onToggle={toggleTask} onDelete={deleteTask} detailed />
+        <CardHeader icon={CheckSquare} title="작업 목록" />
+        <TaskComposer value={taskInput} onChange={setTaskInput} onQuickAdd={addTask} onCreate={createTask} />
+        <ProjectTaskList
+          tasks={tasks}
+          expandedTaskIds={expandedTaskIds}
+          stepDrafts={stepDrafts}
+          onToggleExpanded={toggleTaskExpanded}
+          onToggleTask={toggleTask}
+          onDeleteTask={deleteTask}
+          onUpdateTaskPriority={updateTaskPriority}
+          onStepDraftChange={setStepDraft}
+          onAddStep={addTaskStep}
+          onToggleStep={toggleTaskStep}
+          onUpdateStepPriority={updateTaskStepPriority}
+          onDeleteStep={deleteTaskStep}
+          onMoveStep={moveTaskStep}
+        />
       </GlassCard>
       <GlassCard className="xl:col-span-4">
         <CardHeader icon={Shield} title="할 일 진행률" action={false} />
         <div className="p-5">
           <p className="text-4xl font-semibold text-white">{completedCount}/{tasks.length}</p>
-          <p className="mt-2 text-sm text-slate-500">오늘 완료됨</p>
+          <p className="mt-2 text-sm text-slate-500">완료한 작업</p>
           <div className="mt-5 h-2 rounded-full bg-slate-800">
             <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: progressWidth }} />
           </div>
+          <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.035] p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-400">세부 단계</span>
+              <span className="font-medium text-slate-100">{completedSteps}/{totalSteps}</span>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-slate-800">
+              <div className="h-2 rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${stepProgress}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{stepProgress}% 완료</p>
+          </div>
           <div className="mt-5 space-y-3">
-            {["새 할 일 추가", "완료한 작업 확인", "오래된 항목 삭제"].map((item) => (
+            {["작업 만들기", "세부 단계 정렬", "우선순위 조정"].map((item) => (
               <div key={item} className="flex items-center gap-2 text-sm text-slate-400">
                 <Circle className="h-3 w-3 fill-cyan-300/30 text-cyan-300" />
                 {item}
@@ -2799,6 +3131,7 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, todayEventTotal, dr
 
 function getWorkspaceStorageErrorMessage(errorCode) {
   if (errorCode === "SUPABASE_NOT_CONFIGURED") return "Supabase 서버 환경변수가 설정되지 않았습니다.";
+  if (errorCode === "TASKS_SCHEMA_MISSING") return "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
   if (errorCode === "SUPABASE_QUERY_FAILED") return "Supabase 데이터 조회에 실패했습니다. 서버 로그에서 테이블/권한 오류를 확인해주세요.";
   if (errorCode === "UNAUTHORIZED") return "Google 로그인 세션을 확인하지 못했습니다.";
   return "Google 계정과 Supabase 연결이 정상화되면 계정 기준 데이터로 다시 동기화됩니다.";
@@ -2824,9 +3157,11 @@ function getTimeBasedGreeting(hour) {
 export default function Home() {
   const { data: session, status } = useSession();
   const [activeView, setActiveView] = useState("Dashboard");
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState(() => normalizeTasks(initialTasks));
   const [notes, setNotes] = useState(initialNotes);
   const [taskInput, setTaskInput] = useState("");
+  const [expandedTaskIds, setExpandedTaskIds] = useState([]);
+  const [stepDrafts, setStepDrafts] = useState({});
   const [noteDraft, setNoteDraft] = useState({ title: "", body: "", tag: "개인" });
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -2880,7 +3215,7 @@ export default function Home() {
 
       if (!userEmail) {
         if (!isActive) return;
-        setTasks(localWorkspace.tasks);
+        setTasks(normalizeTasks(localWorkspace.tasks));
         setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
         setWorkspaceStorageErrorCode("");
@@ -2909,7 +3244,7 @@ export default function Home() {
         }
 
         if (!isActive) return;
-        setTasks(remoteTasks);
+        setTasks(normalizeTasks(remoteTasks));
         setNotes(remoteNotes);
         setWorkspaceStorageMode("supabase");
         setWorkspaceStorageErrorCode("");
@@ -2922,7 +3257,7 @@ export default function Home() {
           message: error?.message,
         });
         if (!isActive) return;
-        setTasks(localWorkspace.tasks);
+        setTasks(normalizeTasks(localWorkspace.tasks));
         setNotes(localWorkspace.notes);
         setWorkspaceStorageMode("local");
         setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_LOAD_FAILED");
@@ -3142,7 +3477,7 @@ export default function Home() {
         helper: task.completed ? "완료된 할 일" : "진행 중인 할 일",
         type: "할 일",
         view: "Tasks",
-        searchText: `${task.title} ${task.priority || ""}`,
+        searchText: `${task.title} ${task.description || ""} ${task.priority || ""} ${(task.steps || []).map((step) => step.title).join(" ")}`,
       })),
       ...notes.map((note) => ({
         id: `note-${note.id}`,
@@ -3242,7 +3577,7 @@ export default function Home() {
       fetchNotesFromSupabase(userEmail),
     ]);
 
-    setTasks(remoteTasks);
+    setTasks(normalizeTasks(remoteTasks));
     setNotes(remoteNotes);
     setWorkspaceStorageMode("supabase");
     setWorkspaceStorageErrorCode("");
@@ -3265,19 +3600,52 @@ export default function Home() {
     const title = taskInput.trim();
     if (!title) return;
 
-    await createTaskFromTitle(title);
+    await createTask({ title });
     setTaskInput("");
   }
 
   async function createTaskFromTitle(title) {
-    const localTask = { id: `local-${Date.now()}`, title, completed: false, priority: "보통" };
+    return createTask({ title });
+  }
+
+  async function persistTaskChange(nextTask) {
+    if (workspaceStorageMode !== "supabase" || !userEmail || !nextTask || String(nextTask.id).startsWith("local-")) return;
+
+    try {
+      await updateTaskInSupabase(userEmail, nextTask);
+      await refreshWorkspaceFromSupabase();
+    } catch (error) {
+      console.warn("Supabase task update failed, keeping localStorage fallback:", {
+        code: error?.code,
+        status: error?.status,
+        message: error?.message,
+      });
+      setWorkspaceStorageMode("local");
+      setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
+    }
+  }
+
+  async function createTask(taskDraft) {
+    const title = String(taskDraft.title || "").trim();
+    if (!title) return;
+
+    const localTask = normalizeTask({
+      id: `local-${Date.now()}`,
+      title,
+      description: taskDraft.description || "",
+      completed: false,
+      priority: taskDraft.priority || "보통",
+      steps: taskDraft.steps || [],
+      sort_order: Date.now(),
+    });
+
     setTasks((currentTasks) => [localTask, ...currentTasks]);
 
     if (workspaceStorageMode === "supabase" && userEmail) {
       try {
         const savedTask = await createTaskInSupabase(userEmail, localTask);
         setTasks((currentTasks) =>
-          currentTasks.map((task) => (task.id === localTask.id ? savedTask : task)),
+          currentTasks.map((task) => (task.id === localTask.id ? normalizeTask(savedTask) : task)),
         );
         await refreshWorkspaceFromSupabase();
       } catch (error) {
@@ -3297,28 +3665,146 @@ export default function Home() {
     setTasks((currentTasks) =>
       currentTasks.map((task) => {
         if (task.id !== taskId) return task;
-        nextTask = { ...task, completed: !task.completed };
+        nextTask = normalizeTask({ ...task, completed: !task.completed });
         return nextTask;
       }),
     );
 
-    if (workspaceStorageMode === "supabase" && userEmail && nextTask) {
-      try {
-        await updateTaskInSupabase(userEmail, nextTask);
-        await refreshWorkspaceFromSupabase();
-      } catch (error) {
-        console.warn("Supabase task update failed, keeping localStorage fallback:", {
-          code: error?.code,
-          status: error?.status,
-          message: error?.message,
+    await persistTaskChange(nextTask);
+  }
+
+  function toggleTaskExpanded(taskId) {
+    setExpandedTaskIds((currentIds) =>
+      currentIds.includes(taskId) ? currentIds.filter((id) => id !== taskId) : [...currentIds, taskId],
+    );
+  }
+
+  function setStepDraft(taskId, patch) {
+    setStepDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [taskId]: {
+        title: "",
+        priority: "보통",
+        ...(currentDrafts[taskId] || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  async function updateTaskPriority(taskId, priority) {
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        nextTask = normalizeTask({ ...task, priority });
+        return nextTask;
+      }),
+    );
+
+    await persistTaskChange(nextTask);
+  }
+
+  async function addTaskStep(event, taskId) {
+    event.preventDefault();
+    const draft = stepDrafts[taskId] || { title: "", priority: "보통" };
+    const title = draft.title.trim();
+    if (!title) return;
+
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const steps = normalizeTaskSteps([
+          ...(task.steps || []),
+          {
+            id: `step-${Date.now()}`,
+            title,
+            completed: false,
+            priority: draft.priority || "보통",
+            order: task.steps?.length || 0,
+          },
+        ]);
+        nextTask = normalizeTask({ ...task, steps });
+        return nextTask;
+      }),
+    );
+    setStepDrafts((currentDrafts) => ({ ...currentDrafts, [taskId]: { title: "", priority: draft.priority || "보통" } }));
+
+    await persistTaskChange(nextTask);
+  }
+
+  async function toggleTaskStep(taskId, stepId) {
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const steps = normalizeTaskSteps(
+          (task.steps || []).map((step) => (step.id === stepId ? { ...step, completed: !step.completed } : step)),
+        );
+        nextTask = normalizeTask({ ...task, steps });
+        return nextTask;
+      }),
+    );
+
+    await persistTaskChange(nextTask);
+  }
+
+  async function updateTaskStepPriority(taskId, stepId, priority) {
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const steps = normalizeTaskSteps(
+          (task.steps || []).map((step) => (step.id === stepId ? { ...step, priority } : step)),
+        );
+        nextTask = normalizeTask({ ...task, steps });
+        return nextTask;
+      }),
+    );
+
+    await persistTaskChange(nextTask);
+  }
+
+  async function deleteTaskStep(taskId, stepId) {
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        nextTask = normalizeTask({ ...task, steps: normalizeTaskSteps((task.steps || []).filter((step) => step.id !== stepId)) });
+        return nextTask;
+      }),
+    );
+
+    await persistTaskChange(nextTask);
+  }
+
+  async function moveTaskStep(taskId, stepId, direction) {
+    let nextTask = null;
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const steps = normalizeTaskSteps(task.steps || []);
+        const currentIndex = steps.findIndex((step) => step.id === stepId);
+        const nextIndex = currentIndex + direction;
+        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= steps.length) return task;
+        const reorderedSteps = [...steps];
+        const [movedStep] = reorderedSteps.splice(currentIndex, 1);
+        reorderedSteps.splice(nextIndex, 0, movedStep);
+        nextTask = normalizeTask({
+          ...task,
+          steps: reorderedSteps.map((step, index) => ({ ...step, order: index })),
         });
-        setWorkspaceStorageMode("local");
-        setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_QUERY_FAILED");
-      }
-    }
+        return nextTask;
+      }),
+    );
+
+    await persistTaskChange(nextTask);
   }
 
   async function deleteTask(taskId) {
+    const targetTask = tasks.find((task) => task.id === taskId);
+    if (targetTask && !window.confirm(`"${targetTask.title}" 작업을 삭제할까요?`)) return;
+
     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
 
     if (workspaceStorageMode === "supabase" && userEmail && !String(taskId).startsWith("local-")) {
@@ -3531,9 +4017,20 @@ export default function Home() {
         taskInput={taskInput}
         setTaskInput={setTaskInput}
         addTask={addTask}
+        createTask={createTask}
         toggleTask={toggleTask}
         deleteTask={deleteTask}
         completedCount={completedCount}
+        expandedTaskIds={expandedTaskIds}
+        stepDrafts={stepDrafts}
+        toggleTaskExpanded={toggleTaskExpanded}
+        updateTaskPriority={updateTaskPriority}
+        setStepDraft={setStepDraft}
+        addTaskStep={addTaskStep}
+        toggleTaskStep={toggleTaskStep}
+        updateTaskStepPriority={updateTaskStepPriority}
+        deleteTaskStep={deleteTaskStep}
+        moveTaskStep={moveTaskStep}
       />
     ),
     "AI Assistant": (
