@@ -14,6 +14,7 @@ import {
   updateTaskStepsInSupabase,
   updateTaskInSupabase,
 } from "../lib/workspaceStorage";
+import { mockWeather } from "../lib/weatherData";
 import {
   Bell,
   Bot,
@@ -27,6 +28,8 @@ import {
   Circle,
   Clock3,
   Cloud,
+  CloudRain,
+  Droplets,
   File,
   ExternalLink,
   FileSpreadsheet,
@@ -53,8 +56,10 @@ import {
   Shield,
   Sparkles,
   Sun,
+  Thermometer,
   Trash2,
   User,
+  Wind,
   Youtube,
   X,
 } from "lucide-react";
@@ -821,6 +826,7 @@ async function executeWorkspaceAiCommand(command, context, options = {}) {
 const sidebarItems = [
   { key: "Dashboard", label: "대시보드", icon: LayoutDashboard },
   { key: "Calendar", label: "캘린더", icon: CalendarDays },
+  { key: "Weather", label: "날씨", icon: Cloud },
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
@@ -883,6 +889,7 @@ const initialNotes = [
 const aiSuggestions = [
   "내일 오후 6시에 회의 예약해줘",
   "오늘 일정 요약해줘",
+  "오늘 날씨 알려줘",
   "이번주 일정 뭐 있어?",
   "다음주에 회의 일정있어?",
   "6월 21일에 무슨 일정있어?",
@@ -1197,6 +1204,7 @@ function ViewTitle({ activeView }) {
   const titles = {
     Dashboard: "대시보드",
     Calendar: "캘린더",
+    Weather: "날씨",
     Drive: "드라이브",
     Notes: "메모",
     Tasks: "할 일",
@@ -1208,6 +1216,7 @@ function ViewTitle({ activeView }) {
   const subtitles = {
     Dashboard: "캘린더, 드라이브, 메모, 할 일, AI를 한곳에서 관리하는 시작 화면입니다.",
     Calendar: "나중에 Google 캘린더 API를 연결하기 쉬운 목업 일정 화면입니다.",
+    Weather: "현재 위치의 날씨와 시간별/주간 예보를 확인합니다.",
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
@@ -1907,7 +1916,199 @@ function getGoogleIntegrationStatus({ isConnected, hasAccessToken, serviceStatus
   };
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType }) {
+function WeatherConditionIcon({ condition, className = "h-8 w-8" }) {
+  if (condition?.includes("비")) return <CloudRain className={`${className} text-cyan-200`} />;
+  if (condition?.includes("흐림") || condition?.includes("구름")) return <Cloud className={`${className} text-slate-200`} />;
+  return <Sun className={`${className} text-amber-200`} />;
+}
+
+function WeatherSummaryCard({ weather, onOpenWeather }) {
+  const { current } = weather;
+
+  return (
+    <GlassCard className="xl:col-span-12">
+      <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10">
+            <WeatherConditionIcon condition={current.condition} className="h-9 w-9" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/80">Weather</p>
+            <h3 className="mt-1 truncate text-lg font-semibold text-white">{weather.location}</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {current.condition} · 최고 {current.high}° / 최저 {current.low}°
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:min-w-[560px]">
+          <div>
+            <p className="text-3xl font-semibold text-white">{current.temp}°C</p>
+            <p className="mt-1 text-xs text-slate-500">현재 기온</p>
+          </div>
+          {[
+            ["강수확률", `${current.precipitation}%`, Droplets],
+            ["습도", `${current.humidity}%`, Droplets],
+            ["풍속", `${current.wind}m/s`, Wind],
+            ["오늘", `${current.low}°-${current.high}°`, Thermometer],
+          ].map(([label, value, Icon]) => (
+            <div key={label} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+              <div className="flex items-center gap-2 text-slate-400">
+                <Icon className="h-4 w-4 text-cyan-200" />
+                <span className="text-xs">{label}</span>
+              </div>
+              <p className="mt-2 font-medium text-slate-100">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenWeather}
+          className="flex shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/20"
+        >
+          자세히 보기
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </GlassCard>
+  );
+}
+
+function WeatherMetricChart({ hourly, mode }) {
+  const chartConfig = {
+    temp: { key: "temp", suffix: "°", label: "기온", color: "#facc15" },
+    rain: { key: "rain", suffix: "%", label: "강수확률", color: "#67e8f9" },
+    wind: { key: "wind", suffix: "m/s", label: "바람", color: "#a78bfa" },
+  };
+  const config = chartConfig[mode] || chartConfig.temp;
+  const values = hourly.map((item) => Number(item[config.key]) || 0);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const points = values.map((value, index) => {
+    const x = hourly.length === 1 ? 50 : (index / (hourly.length - 1)) * 100;
+    const y = 78 - ((value - min) / range) * 48;
+    return { x, y, value };
+  });
+  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-medium text-white">시간별 {config.label}</p>
+        <p className="text-xs text-slate-500">mock weather sample</p>
+      </div>
+      <div className="overflow-x-auto">
+        <svg viewBox="0 0 100 100" className="min-w-[620px] overflow-visible rounded-lg">
+          <polyline fill="none" stroke={config.color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" points={polyline} />
+          {points.map((point, index) => (
+            <g key={`${hourly[index].time}-${config.key}`}>
+              <circle cx={point.x} cy={point.y} r="2.4" fill={config.color} />
+              <text x={point.x} y={point.y - 7} textAnchor="middle" className="fill-slate-100 text-[5px] font-semibold">
+                {point.value}{config.suffix}
+              </text>
+              <text x={point.x} y="95" textAnchor="middle" className="fill-slate-500 text-[4px]">
+                {hourly[index].time}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function WeatherView({ weather }) {
+  const [weatherTab, setWeatherTab] = useState("temp");
+  const { current } = weather;
+
+  return (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+      <GlassCard className="xl:col-span-5">
+        <CardHeader icon={Cloud} title="현재 날씨" action={false} />
+        <div className="p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/80">L-Lee Workspace</p>
+          <div className="mt-4 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-slate-400">{weather.location}</p>
+              <p className="mt-3 text-6xl font-semibold text-white">{current.temp}°</p>
+              <p className="mt-2 text-sm text-slate-300">{current.condition}</p>
+            </div>
+            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+              <WeatherConditionIcon condition={current.condition} className="h-12 w-12" />
+            </div>
+          </div>
+          <div className="mt-5 inline-flex rounded-lg border border-white/10 bg-slate-950/55 p-1 text-xs">
+            <button className="rounded-md bg-cyan-300 px-3 py-1.5 font-medium text-slate-950">°C</button>
+            <button className="rounded-md px-3 py-1.5 text-slate-500">°F</button>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            {[
+              ["강수확률", `${current.precipitation}%`, Droplets],
+              ["습도", `${current.humidity}%`, Droplets],
+              ["풍속", `${current.wind}m/s`, Wind],
+              ["최고/최저", `${current.high}° / ${current.low}°`, Thermometer],
+            ].map(([label, value, Icon]) => (
+              <div key={label} className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+                <Icon className="h-4 w-4 text-cyan-200" />
+                <p className="mt-2 text-xs text-slate-500">{label}</p>
+                <p className="mt-1 text-sm font-medium text-white">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="xl:col-span-7">
+        <CardHeader icon={Thermometer} title="시간별 예보" action={false} />
+        <div className="p-5">
+          <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-slate-950/35 p-1">
+            {[
+              ["temp", "기온"],
+              ["rain", "강수확률"],
+              ["wind", "바람"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setWeatherTab(key)}
+                className={`rounded-md px-3 py-2 text-xs font-medium transition ${
+                  weatherTab === key ? "bg-cyan-300 text-slate-950" : "text-slate-400 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <WeatherMetricChart hourly={weather.hourly} mode={weatherTab} />
+        </div>
+      </GlassCard>
+
+      <GlassCard className="xl:col-span-12">
+        <CardHeader icon={CalendarDays} title="주간 예보" action={false} />
+        <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          {weather.weekly.map((day, index) => (
+            <div
+              key={`${day.day}-${index}`}
+              className={`rounded-lg border p-4 ${day.today ? "border-cyan-300/35 bg-cyan-300/10" : "border-white/10 bg-white/[0.035]"}`}
+            >
+              <p className="text-sm font-semibold text-white">{day.today ? "오늘" : day.day}</p>
+              <div className="mt-4 flex items-center justify-between">
+                <WeatherConditionIcon condition={day.condition} className="h-7 w-7" />
+                <span className="text-xs text-cyan-100">{day.rain}%</span>
+              </div>
+              <p className="mt-4 text-sm text-slate-300">{day.condition}</p>
+              <p className="mt-1 text-xs text-slate-500">최고 {day.high}° · 최저 {day.low}°</p>
+            </div>
+          ))}
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, onOpenWeather }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -1925,6 +2126,8 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
           <GoogleAccountPanel session={session} status={status} onLogout={onLogout} />
         </div>
       </GlassCard>
+
+      <WeatherSummaryCard weather={weather} onOpenWeather={onOpenWeather} />
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader
@@ -4129,6 +4332,8 @@ export default function Home() {
         deletingDriveFileId={deletingDriveFileId}
         driveDeleteMessage={driveDeleteMessage}
         driveDeleteMessageType={driveDeleteMessageType}
+        weather={mockWeather}
+        onOpenWeather={() => setActiveView("Weather")}
       />
     ),
     Calendar: (
@@ -4144,6 +4349,7 @@ export default function Home() {
         onCalendarCreated={() => loadCalendarEvents()}
       />
     ),
+    Weather: <WeatherView weather={mockWeather} />,
     Drive: (
       <DriveView
         files={driveFilesData}
