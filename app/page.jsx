@@ -1922,8 +1922,10 @@ function WeatherConditionIcon({ condition, className = "h-8 w-8" }) {
   return <Sun className={`${className} text-amber-200`} />;
 }
 
-function WeatherSummaryCard({ weather, onOpenWeather }) {
+function WeatherSummaryCard({ weather, weatherStatus, weatherError, onOpenWeather }) {
   const { current } = weather;
+  const isLoading = weatherStatus === "loading";
+  const isError = weatherStatus === "error";
 
   return (
     <GlassCard className="xl:col-span-12">
@@ -1936,7 +1938,7 @@ function WeatherSummaryCard({ weather, onOpenWeather }) {
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/80">Weather</p>
             <h3 className="mt-1 truncate text-lg font-semibold text-white">{weather.location}</h3>
             <p className="mt-1 text-sm text-slate-400">
-              {current.condition} · 최고 {current.high}° / 최저 {current.low}°
+              {isLoading ? "날씨를 불러오는 중..." : isError ? weatherError || "날씨 정보를 불러오지 못했습니다." : `${current.condition} · 최고 ${current.high}° / 최저 ${current.low}°`}
             </p>
           </div>
         </div>
@@ -1988,19 +1990,19 @@ function WeatherMetricChart({ hourly, mode }) {
   const range = Math.max(max - min, 1);
   const points = values.map((value, index) => {
     const x = hourly.length === 1 ? 50 : (index / (hourly.length - 1)) * 100;
-    const y = 78 - ((value - min) / range) * 48;
+    const y = 58 - ((value - min) / range) * 34;
     return { x, y, value };
   });
   const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="rounded-lg border border-white/10 bg-slate-950/35 p-3">
+      <div className="mb-2 flex items-center justify-between">
         <p className="text-sm font-medium text-white">시간별 {config.label}</p>
-        <p className="text-xs text-slate-500">mock weather sample</p>
+        <p className="text-xs text-slate-500">Open-Meteo</p>
       </div>
       <div className="overflow-x-auto">
-        <svg viewBox="0 0 100 100" className="min-w-[620px] overflow-visible rounded-lg">
+        <svg viewBox="0 0 100 72" className="h-40 min-w-[520px] overflow-visible rounded-lg sm:h-44">
           <polyline fill="none" stroke={config.color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" points={polyline} />
           {points.map((point, index) => (
             <g key={`${hourly[index].time}-${config.key}`}>
@@ -2008,7 +2010,7 @@ function WeatherMetricChart({ hourly, mode }) {
               <text x={point.x} y={point.y - 7} textAnchor="middle" className="fill-slate-100 text-[5px] font-semibold">
                 {point.value}{config.suffix}
               </text>
-              <text x={point.x} y="95" textAnchor="middle" className="fill-slate-500 text-[4px]">
+              <text x={point.x} y="70" textAnchor="middle" className="fill-slate-500 text-[4px]">
                 {hourly[index].time}
               </text>
             </g>
@@ -2019,31 +2021,40 @@ function WeatherMetricChart({ hourly, mode }) {
   );
 }
 
-function WeatherView({ weather }) {
+function WeatherView({ weather, weatherStatus, weatherError }) {
   const [weatherTab, setWeatherTab] = useState("temp");
   const { current } = weather;
+  const isLoading = weatherStatus === "loading";
+  const isError = weatherStatus === "error";
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+      {(isLoading || isError) && (
+        <GlassCard className="xl:col-span-12">
+          <p className={`p-4 text-sm ${isError ? "text-rose-100" : "text-cyan-100"}`}>
+            {isLoading ? "날씨를 불러오는 중..." : weatherError || "날씨 정보를 불러오지 못했습니다."}
+          </p>
+        </GlassCard>
+      )}
       <GlassCard className="xl:col-span-5">
         <CardHeader icon={Cloud} title="현재 날씨" action={false} />
-        <div className="p-5">
+        <div className="p-4">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-cyan-300/80">L-Lee Workspace</p>
           <div className="mt-4 flex items-start justify-between gap-4">
             <div>
               <p className="text-sm text-slate-400">{weather.location}</p>
-              <p className="mt-3 text-6xl font-semibold text-white">{current.temp}°</p>
+              <p className="mt-3 text-5xl font-semibold text-white">{current.temp}°</p>
               <p className="mt-2 text-sm text-slate-300">{current.condition}</p>
             </div>
             <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
               <WeatherConditionIcon condition={current.condition} className="h-12 w-12" />
             </div>
           </div>
-          <div className="mt-5 inline-flex rounded-lg border border-white/10 bg-slate-950/55 p-1 text-xs">
+          <div className="mt-4 inline-flex rounded-lg border border-white/10 bg-slate-950/55 p-1 text-xs">
             <button className="rounded-md bg-cyan-300 px-3 py-1.5 font-medium text-slate-950">°C</button>
             <button className="rounded-md px-3 py-1.5 text-slate-500">°F</button>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             {[
               ["강수확률", `${current.precipitation}%`, Droplets],
               ["습도", `${current.humidity}%`, Droplets],
@@ -2062,8 +2073,8 @@ function WeatherView({ weather }) {
 
       <GlassCard className="xl:col-span-7">
         <CardHeader icon={Thermometer} title="시간별 예보" action={false} />
-        <div className="p-5">
-          <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-slate-950/35 p-1">
+        <div className="p-4">
+          <div className="mb-3 grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-slate-950/35 p-1">
             {[
               ["temp", "기온"],
               ["rain", "강수확률"],
@@ -2087,18 +2098,18 @@ function WeatherView({ weather }) {
 
       <GlassCard className="xl:col-span-12">
         <CardHeader icon={CalendarDays} title="주간 예보" action={false} />
-        <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
           {weather.weekly.map((day, index) => (
             <div
               key={`${day.day}-${index}`}
-              className={`rounded-lg border p-4 ${day.today ? "border-cyan-300/35 bg-cyan-300/10" : "border-white/10 bg-white/[0.035]"}`}
+              className={`rounded-lg border p-3 ${day.today ? "border-cyan-300/35 bg-cyan-300/10" : "border-white/10 bg-white/[0.035]"}`}
             >
               <p className="text-sm font-semibold text-white">{day.today ? "오늘" : day.day}</p>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="mt-3 flex items-center justify-between">
                 <WeatherConditionIcon condition={day.condition} className="h-7 w-7" />
                 <span className="text-xs text-cyan-100">{day.rain}%</span>
               </div>
-              <p className="mt-4 text-sm text-slate-300">{day.condition}</p>
+              <p className="mt-3 text-sm text-slate-300">{day.condition}</p>
               <p className="mt-1 text-xs text-slate-500">최고 {day.high}° · 최저 {day.low}°</p>
             </div>
           ))}
@@ -2108,7 +2119,7 @@ function WeatherView({ weather }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, onOpenWeather }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const scheduleOptions = [
@@ -2127,7 +2138,7 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
         </div>
       </GlassCard>
 
-      <WeatherSummaryCard weather={weather} onOpenWeather={onOpenWeather} />
+      <WeatherSummaryCard weather={weather} weatherStatus={weatherStatus} weatherError={weatherError} onOpenWeather={onOpenWeather} />
 
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader
@@ -3501,6 +3512,9 @@ export default function Home() {
   const [calendarStatus, setCalendarStatus] = useState("idle");
   const [driveFilesData, setDriveFilesData] = useState([]);
   const [driveStatus, setDriveStatus] = useState("idle");
+  const [weatherData, setWeatherData] = useState(mockWeather);
+  const [weatherStatus, setWeatherStatus] = useState("idle");
+  const [weatherError, setWeatherError] = useState("");
   const [driveFileToDelete, setDriveFileToDelete] = useState(null);
   const [deletingDriveFileId, setDeletingDriveFileId] = useState(null);
   const [driveDeleteMessage, setDriveDeleteMessage] = useState("");
@@ -3550,6 +3564,69 @@ export default function Home() {
     if (!clientReady) return;
     window.localStorage.setItem(THEME_KEY, themeMode);
   }, [clientReady, themeMode]);
+
+  useEffect(() => {
+    if (!clientReady) return;
+
+    let isActive = true;
+    const fallbackCoords = { lat: 33.4996, lon: 126.5312 };
+
+    async function loadWeather(coords = fallbackCoords) {
+      setWeatherStatus("loading");
+      setWeatherError("");
+
+      try {
+        const params = new URLSearchParams({
+          lat: String(coords.lat),
+          lon: String(coords.lon),
+        });
+        const response = await fetch(`/api/weather?${params}`, { cache: "no-store" });
+        const { data, text } = await readApiResponse(response);
+        if (!response.ok) {
+          throw new Error(getApiErrorMessage(response, data, text, "날씨 정보를 불러오지 못했습니다."));
+        }
+        if (!isActive) return;
+        setWeatherData(data?.weather || mockWeather);
+        setWeatherStatus("ready");
+      } catch (error) {
+        console.warn("Weather load failed:", {
+          message: error?.message,
+        });
+        if (!isActive) return;
+        setWeatherData(mockWeather);
+        setWeatherStatus("error");
+        setWeatherError("날씨 정보를 불러오지 못했습니다.");
+      }
+    }
+
+    if (!navigator?.geolocation) {
+      loadWeather(fallbackCoords);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        loadWeather({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        });
+      },
+      () => {
+        loadWeather(fallbackCoords);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 7000,
+        maximumAge: 10 * 60 * 1000,
+      },
+    );
+
+    return () => {
+      isActive = false;
+    };
+  }, [clientReady]);
 
   useEffect(() => {
     if (!clientReady) return;
@@ -3806,7 +3883,7 @@ export default function Home() {
         helper: "워크스페이스 화면으로 이동",
         type: "화면",
         view: item.key,
-        searchText: `${item.label} ${item.key}`,
+        searchText: `${item.label} ${item.key} ${item.key === "Weather" ? "weather 기온 비 강수확률 바람 습도 날씨 예보" : ""}`,
       })),
       ...quickLaunchApps.map((app) => ({
         id: `app-${app.name}`,
@@ -4332,7 +4409,9 @@ export default function Home() {
         deletingDriveFileId={deletingDriveFileId}
         driveDeleteMessage={driveDeleteMessage}
         driveDeleteMessageType={driveDeleteMessageType}
-        weather={mockWeather}
+        weather={weatherData}
+        weatherStatus={weatherStatus}
+        weatherError={weatherError}
         onOpenWeather={() => setActiveView("Weather")}
       />
     ),
@@ -4349,7 +4428,7 @@ export default function Home() {
         onCalendarCreated={() => loadCalendarEvents()}
       />
     ),
-    Weather: <WeatherView weather={mockWeather} />,
+    Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
     Drive: (
       <DriveView
         files={driveFilesData}
