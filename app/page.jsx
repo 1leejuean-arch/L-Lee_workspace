@@ -1084,9 +1084,9 @@ function GlassCard({ children, className = "" }) {
 function CardHeader({ icon: Icon, title, action = true, actionContent = null }) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
-      <div className="flex items-center gap-3">
-        <Icon className="h-5 w-5 text-cyan-300" />
-        <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
+      <div className="flex min-w-0 items-center gap-3">
+        <Icon className="h-5 w-5 shrink-0 text-cyan-300" />
+        <h2 className="min-w-0 truncate text-sm font-semibold text-slate-100">{title}</h2>
       </div>
       {actionContent}
       {action && !actionContent && (
@@ -1523,8 +1523,10 @@ function TaskComposer({ value, onChange, onQuickAdd, onCreate }) {
 
 function ProjectTaskList({
   tasks,
+  activeTaskId,
   expandedTaskIds,
   stepDrafts,
+  onSelectTask,
   onToggleExpanded,
   onToggleTask,
   onDeleteTask,
@@ -1544,12 +1546,19 @@ function ProjectTaskList({
     <div className="workspace-scrollbar max-h-[68vh] space-y-3 overflow-y-auto p-5">
       {tasks.map((task) => {
         const isExpanded = expandedTaskIds.includes(task.id);
+        const isActive = task.id === activeTaskId;
         const steps = task.steps || [];
         const completedSteps = steps.filter((step) => step.completed).length;
         const stepProgress = steps.length ? Math.round((completedSteps / steps.length) * 100) : 0;
 
         return (
-          <article key={task.id} className="rounded-lg border border-white/10 bg-white/[0.035] p-4 transition hover:bg-white/[0.055]">
+          <article
+            key={task.id}
+            onClick={() => onSelectTask(task.id)}
+            className={`rounded-lg border p-4 transition hover:bg-white/[0.055] ${
+              isActive ? "border-cyan-300/40 bg-cyan-300/[0.07] shadow-lg shadow-cyan-500/10" : "border-white/10 bg-white/[0.035]"
+            }`}
+          >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
               <button type="button" onClick={() => onToggleTask(task.id)} className="mt-0.5 shrink-0">
                 <span
@@ -2657,6 +2666,8 @@ function TasksView({
   toggleTask,
   deleteTask,
   completedCount,
+  activeTaskId,
+  selectTask,
   expandedTaskIds,
   stepDrafts,
   toggleTaskExpanded,
@@ -2671,6 +2682,11 @@ function TasksView({
 }) {
   const progressWidth = tasks.length ? `${(completedCount / tasks.length) * 100}%` : "0%";
   const { totalSteps, completedSteps, stepProgress } = getTaskStepStats(tasks);
+  const activeTask = tasks.find((task) => task.id === activeTaskId) || null;
+  const activeSteps = activeTask?.steps || [];
+  const activeCompletedSteps = activeSteps.filter((step) => step.completed).length;
+  const activeStepProgress = activeSteps.length ? Math.round((activeCompletedSteps / activeSteps.length) * 100) : 0;
+  const progressTitle = activeTask ? `${activeTask.title} 진행률` : "할 일 진행률";
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
@@ -2684,8 +2700,10 @@ function TasksView({
         )}
         <ProjectTaskList
           tasks={tasks}
+          activeTaskId={activeTaskId}
           expandedTaskIds={expandedTaskIds}
           stepDrafts={stepDrafts}
+          onSelectTask={selectTask}
           onToggleExpanded={toggleTaskExpanded}
           onToggleTask={toggleTask}
           onDeleteTask={deleteTask}
@@ -2699,31 +2717,60 @@ function TasksView({
         />
       </GlassCard>
       <GlassCard className="xl:col-span-4">
-        <CardHeader icon={Shield} title="할 일 진행률" action={false} />
+        <CardHeader icon={Shield} title={progressTitle} action={false} />
         <div className="p-5">
-          <p className="text-4xl font-semibold text-white">{completedCount}/{tasks.length}</p>
-          <p className="mt-2 text-sm text-slate-500">완료한 작업</p>
-          <div className="mt-5 h-2 rounded-full bg-slate-800">
-            <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: progressWidth }} />
-          </div>
-          <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.035] p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">세부 단계</span>
-              <span className="font-medium text-slate-100">{completedSteps}/{totalSteps}</span>
-            </div>
-            <div className="mt-3 h-2 rounded-full bg-slate-800">
-              <div className="h-2 rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${stepProgress}%` }} />
-            </div>
-            <p className="mt-2 text-xs text-slate-500">{stepProgress}% 완료</p>
-          </div>
-          <div className="mt-5 space-y-3">
-            {["작업 만들기", "세부 단계 정렬", "우선순위 조정"].map((item) => (
-              <div key={item} className="flex items-center gap-2 text-sm text-slate-400">
-                <Circle className="h-3 w-3 fill-cyan-300/30 text-cyan-300" />
-                {item}
+          {activeTask ? (
+            <>
+              <p className="break-words text-lg font-semibold text-white">{activeTask.title}</p>
+              <p className="mt-2 text-sm text-slate-500">세부 단계 {activeCompletedSteps}/{activeSteps.length}</p>
+              <div className="mt-5 h-2 rounded-full bg-slate-800">
+                <div className="h-2 rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${activeStepProgress}%` }} />
               </div>
-            ))}
-          </div>
+              <p className="mt-2 text-xs text-slate-500">{activeStepProgress}% 완료</p>
+              <div className="mt-5 space-y-2">
+                {activeSteps.length === 0 ? (
+                  <p className="rounded-lg border border-white/10 bg-white/[0.035] p-3 text-sm text-slate-500">세부 단계가 아직 없습니다.</p>
+                ) : (
+                  activeSteps.slice(0, 5).map((step) => (
+                    <div key={step.id} className="flex items-center gap-2 rounded-lg bg-white/[0.035] px-3 py-2 text-sm text-slate-300">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${step.completed ? "bg-cyan-300" : "bg-slate-600"}`} />
+                      <span className={`min-w-0 flex-1 truncate ${step.completed ? "text-slate-500 line-through" : ""}`}>{step.title}</span>
+                      <PriorityBadge priority={step.priority} />
+                    </div>
+                  ))
+                )}
+                {activeSteps.length > 5 && <p className="text-xs text-slate-500">외 {activeSteps.length - 5}개 단계가 더 있습니다.</p>}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-4xl font-semibold text-white">{completedCount}/{tasks.length}</p>
+              <p className="mt-2 text-sm text-slate-500">완료한 작업</p>
+              <div className="mt-5 h-2 rounded-full bg-slate-800">
+                <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: progressWidth }} />
+              </div>
+              <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.035] p-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">세부 단계</span>
+                  <span className="font-medium text-slate-100">{completedSteps}/{totalSteps}</span>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-slate-800">
+                  <div className="h-2 rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${stepProgress}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{stepProgress}% 완료</p>
+              </div>
+            </>
+          )}
+          {!activeTask && (
+            <div className="mt-5 space-y-3">
+              {["작업 만들기", "세부 단계 정렬", "우선순위 조정"].map((item) => (
+                <div key={item} className="flex items-center gap-2 text-sm text-slate-400">
+                  <Circle className="h-3 w-3 fill-cyan-300/30 text-cyan-300" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </GlassCard>
     </div>
@@ -3194,6 +3241,7 @@ export default function Home() {
   const [tasks, setTasks] = useState(() => normalizeTasks(initialTasks));
   const [notes, setNotes] = useState(initialNotes);
   const [taskInput, setTaskInput] = useState("");
+  const [activeTaskId, setActiveTaskId] = useState(null);
   const [expandedTaskIds, setExpandedTaskIds] = useState([]);
   const [stepDrafts, setStepDrafts] = useState({});
   const [taskSaveMessage, setTaskSaveMessage] = useState("");
@@ -3747,6 +3795,7 @@ export default function Home() {
   }
 
   function toggleTaskExpanded(taskId) {
+    setActiveTaskId(taskId);
     setExpandedTaskIds((currentIds) =>
       currentIds.includes(taskId) ? currentIds.filter((id) => id !== taskId) : [...currentIds, taskId],
     );
@@ -3865,6 +3914,8 @@ export default function Home() {
     const targetTask = tasks.find((task) => task.id === taskId);
     if (targetTask && !window.confirm(`"${targetTask.title}" 작업을 삭제할까요?`)) return;
 
+    if (activeTaskId === taskId) setActiveTaskId(null);
+    setExpandedTaskIds((currentIds) => currentIds.filter((id) => id !== taskId));
     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
 
     if (workspaceStorageMode === "supabase" && userEmail && !String(taskId).startsWith("local-")) {
@@ -4082,6 +4133,8 @@ export default function Home() {
         toggleTask={toggleTask}
         deleteTask={deleteTask}
         completedCount={completedCount}
+        activeTaskId={activeTaskId}
+        selectTask={setActiveTaskId}
         expandedTaskIds={expandedTaskIds}
         stepDrafts={stepDrafts}
         toggleTaskExpanded={toggleTaskExpanded}
