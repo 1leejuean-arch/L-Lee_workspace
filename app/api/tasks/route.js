@@ -6,6 +6,7 @@ const DEFAULT_PRIORITY = "보통";
 const TASK_COLUMNS = "id,user_email,title,description,completed,priority,steps,sort_order,created_at,updated_at";
 const MINIMAL_TASK_COLUMNS = "id,user_email,title,completed,created_at";
 const TASKS_SCHEMA_MISSING_MESSAGE = "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
+const MAX_POSTGRES_INTEGER = 2147483647;
 
 function normalizePriority(priority) {
   if (["낮음", "보통", "높음"].includes(priority)) return priority;
@@ -30,6 +31,13 @@ function normalizeSteps(steps) {
     .map((step, index) => ({ ...step, order: index }));
 }
 
+function normalizeSortOrder(sortOrder, fallback = 0) {
+  const value = Number(sortOrder);
+  if (!Number.isFinite(value)) return fallback;
+  if (value < 0 || value > MAX_POSTGRES_INTEGER) return fallback;
+  return Math.trunc(value);
+}
+
 function mapTaskRow(row, index = 0) {
   return {
     id: row.id,
@@ -39,7 +47,7 @@ function mapTaskRow(row, index = 0) {
     completed: Boolean(row.completed),
     priority: normalizePriority(row.priority),
     steps: normalizeSteps(row.steps),
-    sort_order: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
+    sort_order: normalizeSortOrder(row.sort_order),
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
   };
@@ -98,8 +106,8 @@ function buildTaskPayload(body, { includeTitle = false } = {}) {
   if (body.completed !== undefined) payload.completed = Boolean(body.completed);
   if (body.priority !== undefined) payload.priority = normalizePriority(body.priority);
   if (body.steps !== undefined) payload.steps = normalizeSteps(body.steps);
-  if (body.sort_order !== undefined && Number.isFinite(Number(body.sort_order))) {
-    payload.sort_order = Number(body.sort_order);
+  if (body.sort_order !== undefined) {
+    payload.sort_order = normalizeSortOrder(body.sort_order);
   }
 
   return payload;
@@ -157,7 +165,7 @@ export async function POST(request) {
       completed: Boolean(body.completed),
       priority: normalizePriority(body.priority),
       steps: normalizeSteps(body.steps),
-      sort_order: Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : Date.now(),
+      sort_order: normalizeSortOrder(body.sort_order),
     };
 
     let result = await supabase.from("tasks").insert(payload).select(TASK_COLUMNS).single();

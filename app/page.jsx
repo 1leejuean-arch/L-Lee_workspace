@@ -918,6 +918,7 @@ const priorityBadgeStyles = {
   보통: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
   높음: "border-rose-300/25 bg-rose-400/10 text-rose-100",
 };
+const maxPostgresInteger = 2147483647;
 
 function normalizePriority(priority) {
   const translatedPriority = priorityTranslations[priority] || priority;
@@ -941,6 +942,8 @@ function normalizeTaskSteps(steps) {
 }
 
 function normalizeTask(task, index = 0) {
+  const sortOrder = Number(task?.sort_order);
+
   return {
     ...task,
     id: task?.id || `local-${Date.now()}-${index}`,
@@ -949,7 +952,7 @@ function normalizeTask(task, index = 0) {
     completed: Boolean(task?.completed),
     priority: normalizePriority(task?.priority),
     steps: normalizeTaskSteps(task?.steps),
-    sort_order: Number.isFinite(Number(task?.sort_order)) ? Number(task.sort_order) : 0,
+    sort_order: Number.isFinite(sortOrder) && sortOrder >= 0 && sortOrder <= maxPostgresInteger ? Math.trunc(sortOrder) : 0,
   };
 }
 
@@ -966,6 +969,15 @@ function getTaskStepStats(tasks) {
     completedSteps,
     stepProgress: steps.length ? Math.round((completedSteps / steps.length) * 100) : 0,
   };
+}
+
+function getNextTaskSortOrder(tasks) {
+  const maxSortOrder = tasks.reduce((maxOrder, task) => {
+    const sortOrder = Number(task?.sort_order);
+    return Number.isFinite(sortOrder) && sortOrder >= 0 ? Math.max(maxOrder, sortOrder) : maxOrder;
+  }, -1);
+
+  return maxSortOrder + 1;
 }
 
 const noteTranslations = {
@@ -3636,7 +3648,7 @@ export default function Home() {
       completed: false,
       priority: taskDraft.priority || "보통",
       steps: taskDraft.steps || [],
-      sort_order: Date.now(),
+      sort_order: getNextTaskSortOrder(tasks),
     });
 
     setTasks((currentTasks) => [localTask, ...currentTasks]);
