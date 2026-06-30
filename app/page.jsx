@@ -389,6 +389,54 @@ function getEventStart(event) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+const KOREA_TIME_ZONE = "Asia/Seoul";
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function getKoreanDateKey(dateOrDateTime = new Date()) {
+  if (typeof dateOrDateTime === "string" && DATE_KEY_PATTERN.test(dateOrDateTime)) {
+    return dateOrDateTime;
+  }
+
+  const date = dateOrDateTime instanceof Date ? dateOrDateTime : new Date(dateOrDateTime);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: KOREA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function parseDateKey(dateKey) {
+  if (!DATE_KEY_PATTERN.test(dateKey || "")) return null;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return { year, month, day };
+}
+
+function addDaysToDateKey(dateKey, days) {
+  const parts = parseDateKey(dateKey);
+  if (!parts) return "";
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function getKoreanWeekRangeKeys(dateOrDateTime = new Date()) {
+  const dateKey = getKoreanDateKey(dateOrDateTime);
+  const parts = parseDateKey(dateKey);
+  if (!parts) return { startKey: "", endKey: "" };
+  const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const startKey = addDaysToDateKey(dateKey, -utcDate.getUTCDay());
+  return { startKey, endKey: addDaysToDateKey(startKey, 6) };
+}
+
+function isDateKeyInRange(dateKey, startKey, endKey) {
+  return Boolean(dateKey && startKey && endKey && dateKey >= startKey && dateKey <= endKey);
+}
+
 function startOfDay(date) {
   const nextDate = new Date(date);
   nextDate.setHours(0, 0, 0, 0);
@@ -628,11 +676,13 @@ function getCalendarSearchTerms(searchTerm) {
 
 function filterCalendarEventsForQuery(events, range, searchTerm) {
   const searchTerms = getCalendarSearchTerms(searchTerm);
+  const startKey = getKoreanDateKey(range.start);
+  const endKey = addDaysToDateKey(getKoreanDateKey(range.end), -1);
 
   return events
     .filter((event) => {
-      const start = getEventStart(event);
-      if (!start || start < range.start || start >= range.end) return false;
+      const eventDateKey = getEventDateKey(event);
+      if (!isDateKeyInRange(eventDateKey, startKey, endKey)) return false;
 
       if (!searchTerms.length) return true;
       const targetText = `${event.title || ""} ${event.place || ""}`.toLowerCase();
@@ -2365,6 +2415,7 @@ function CalendarCreateForm({ status, onCreated }) {
 
 function getTimeInputValue(value, fallback = "") {
   if (!value) return fallback;
+  if (DATE_KEY_PATTERN.test(value)) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return fallback;
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -2594,15 +2645,12 @@ function CalendarEditModal({ event, status, onClose, onSaved }) {
 }
 
 function getDateInputValue(date = stableInitialDate) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getKoreanDateKey(date);
 }
 
 function getLocalEventDate(event) {
   if (!event?.start) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(event.start)) {
+  if (DATE_KEY_PATTERN.test(event.start)) {
     return new Date(`${event.start}T00:00:00`);
   }
 
@@ -2611,49 +2659,31 @@ function getLocalEventDate(event) {
 }
 
 function getEventDateKey(event) {
-  const date = getLocalEventDate(event);
-  if (!date) return "";
-  return getDateInputValue(date);
-}
-
-function isSameLocalDay(date, target) {
-  return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth() && date.getDate() === target.getDate();
+  if (event?.dateKey) return event.dateKey;
+  return getKoreanDateKey(event?.start || "");
 }
 
 function getLocalWeekRange(date = stableInitialDate) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - start.getDay());
-
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-
-  return { start, end };
+  return getKoreanWeekRangeKeys(date);
 }
 
 function getDashboardScheduleEvents(calendarEvents, range, todayDate = stableInitialDate) {
   const monthEvents = calendarEvents.month || [];
-  const now = todayDate;
+  const todayKey = getKoreanDateKey(todayDate);
 
   if (range === "today") {
-    return monthEvents.filter((event) => {
-      const eventDate = getLocalEventDate(event);
-      return eventDate ? isSameLocalDay(eventDate, now) : false;
-    });
+    return monthEvents.filter((event) => getEventDateKey(event) === todayKey);
   }
 
   if (range === "week") {
-    const { start, end } = getLocalWeekRange(now);
-    return monthEvents.filter((event) => {
-      const eventDate = getLocalEventDate(event);
-      return eventDate ? eventDate >= start && eventDate <= end : false;
-    });
+    const { startKey, endKey } = getLocalWeekRange(todayDate);
+    return monthEvents.filter((event) => isDateKeyInRange(getEventDateKey(event), startKey, endKey));
   }
 
+  const monthKey = todayKey.slice(0, 7);
   return monthEvents.filter((event) => {
-    const eventDate = getLocalEventDate(event);
-    return eventDate ? eventDate.getFullYear() === now.getFullYear() && eventDate.getMonth() === now.getMonth() : false;
+    const eventDateKey = getEventDateKey(event);
+    return eventDateKey.startsWith(monthKey);
   });
 }
 
@@ -2667,12 +2697,12 @@ function getScheduleEmptyMessage(range, status) {
 function getCalendarMarkedDays(calendarEvents, visibleDate = stableInitialDate) {
   const markedDays = new Set();
   const monthEvents = calendarEvents.month || [];
+  const visibleMonthKey = getKoreanDateKey(visibleDate).slice(0, 7);
 
   monthEvents.forEach((event) => {
-    const eventDate = getLocalEventDate(event);
-    if (!eventDate) return;
-    if (eventDate.getFullYear() === visibleDate.getFullYear() && eventDate.getMonth() === visibleDate.getMonth()) {
-      markedDays.add(eventDate.getDate());
+    const eventDateKey = getEventDateKey(event);
+    if (eventDateKey.startsWith(visibleMonthKey)) {
+      markedDays.add(Number(eventDateKey.slice(8, 10)));
     }
   });
 
@@ -2699,12 +2729,14 @@ function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthC
   const [selectedDate, setSelectedDate] = useState(() => getDateInputValue(stableInitialDate));
   const [editingEvent, setEditingEvent] = useState(null);
   const monthEvents = calendarEvents.month || calendarEvents.week || [];
+  const visibleMonthKey = getKoreanDateKey(visibleDate).slice(0, 7);
+  const { startKey: weekStartKey, endKey: weekEndKey } = getKoreanWeekRangeKeys(new Date());
   const selectedEvents =
     scheduleMode === "day"
       ? monthEvents.filter((event) => getEventDateKey(event) === selectedDate)
       : scheduleMode === "month"
-        ? monthEvents
-        : calendarEvents.week || [];
+        ? monthEvents.filter((event) => getEventDateKey(event).startsWith(visibleMonthKey))
+        : monthEvents.filter((event) => isDateKeyInRange(getEventDateKey(event), weekStartKey, weekEndKey));
   const scheduleTitle = getCalendarScopeLabel(scheduleMode, selectedDate, visibleDate);
   const emptyMessage =
     status === "authenticated"
@@ -2714,6 +2746,17 @@ function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthC
     setSelectedDate(dateValue);
     setScheduleMode("day");
   };
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development" || scheduleMode !== "day") return;
+    monthEvents.forEach((event) => {
+      console.debug("[calendar] date filter", {
+        selectedDateKey: selectedDate,
+        summary: event.title,
+        eventDateKey: getEventDateKey(event),
+      });
+    });
+  }, [monthEvents, scheduleMode, selectedDate]);
 
   useEffect(() => {
     setSelectedDate(getDateInputValue(new Date()));

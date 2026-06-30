@@ -2,13 +2,67 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../auth/[...nextauth]/route";
 
+const KOREA_TIME_ZONE = "Asia/Seoul";
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function getKoreanDateKey(dateOrDateTime = new Date()) {
+  if (typeof dateOrDateTime === "string" && DATE_KEY_PATTERN.test(dateOrDateTime)) {
+    return dateOrDateTime;
+  }
+
+  const date = dateOrDateTime instanceof Date ? dateOrDateTime : new Date(dateOrDateTime);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: KOREA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function parseDateKey(dateKey) {
+  if (!DATE_KEY_PATTERN.test(dateKey || "")) return null;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return { year, month, day };
+}
+
+function addDaysToDateKey(dateKey, days) {
+  const parts = parseDateKey(dateKey);
+  if (!parts) return "";
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function koreanDateTimeToUtcDate(dateKey, hour = 0, minute = 0, second = 0, millisecond = 0) {
+  const parts = parseDateKey(dateKey);
+  if (!parts) return new Date();
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, hour - 9, minute, second, millisecond));
+}
+
+function getKoreanWeekRangeKeys(dateOrDateTime = new Date()) {
+  const dateKey = getKoreanDateKey(dateOrDateTime);
+  const parts = parseDateKey(dateKey);
+  if (!parts) return { startKey: "", endKey: "" };
+  const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const startKey = addDaysToDateKey(dateKey, -utcDate.getUTCDay());
+  return { startKey, endKey: addDaysToDateKey(startKey, 6) };
+}
+
+function isDateKeyInRange(dateKey, startKey, endKey) {
+  return Boolean(dateKey && startKey && endKey && dateKey >= startKey && dateKey <= endKey);
+}
+
 function formatTime(value) {
   if (!value) return "시간 없음";
   return new Intl.DateTimeFormat("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "Asia/Seoul",
+    timeZone: KOREA_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -42,6 +96,8 @@ function normalizeEvent(event, index) {
     accent: accents[index % accents.length],
     start: startValue,
     end: endValue,
+    allDay: isAllDay,
+    dateKey: getKoreanDateKey(startValue),
     htmlLink: event.htmlLink,
   };
 }
@@ -51,29 +107,35 @@ function getDateRange(searchParams) {
   const range = searchParams.get("range");
   const requestedYear = Number(searchParams.get("year"));
   const requestedMonth = Number(searchParams.get("month"));
-  const targetYear = Number.isInteger(requestedYear) && requestedYear >= 1970 ? requestedYear : now.getFullYear();
-  const targetMonth = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 ? requestedMonth - 1 : now.getMonth();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
+  const todayKey = getKoreanDateKey(now);
+  const todayParts = parseDateKey(todayKey);
+  const targetYear = Number.isInteger(requestedYear) && requestedYear >= 1970 ? requestedYear : todayParts.year;
+  const targetMonthNumber = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 ? requestedMonth : todayParts.month;
+  const monthStartKey = range === "year" ? `${targetYear}-01-01` : `${targetYear}-${String(targetMonthNumber).padStart(2, "0")}-01`;
+  const monthEndKey =
+    range === "year"
+      ? `${targetYear}-12-31`
+      : addDaysToDateKey(
+          `${targetMonthNumber === 12 ? targetYear + 1 : targetYear}-${String(targetMonthNumber === 12 ? 1 : targetMonthNumber + 1).padStart(2, "0")}-01`,
+          -1,
+        );
+  const lookupEndKey = range === "year" ? monthEndKey : addDaysToDateKey(monthEndKey, 31);
+  const { startKey: weekStartKey, endKey: weekEndKey } = getKoreanWeekRangeKeys(now);
+  const fetchStartKey = [monthStartKey, weekStartKey, todayKey].sort()[0];
+  const fetchEndKeys = [lookupEndKey, weekEndKey, todayKey].sort();
+  const fetchEndKey = fetchEndKeys[fetchEndKeys.length - 1];
 
-  const tomorrowStart = new Date(todayStart);
-  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
-  const weekEnd = new Date(todayStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  const monthStart = range === "year" ? new Date(targetYear, 0, 1) : new Date(targetYear, targetMonth, 1);
-  const monthEnd = range === "year" ? new Date(targetYear, 11, 31) : new Date(targetYear, targetMonth + 1, 0);
-  monthEnd.setHours(23, 59, 59, 999);
-
-  const lookupEnd = range === "year" ? new Date(targetYear, 11, 31) : new Date(targetYear, targetMonth + 2, 0);
-  lookupEnd.setHours(23, 59, 59, 999);
-
-  const fetchStart = monthStart < todayStart ? monthStart : todayStart;
-  const fetchEnd = lookupEnd > weekEnd ? lookupEnd : weekEnd;
-
-  return { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, lookupEnd, fetchStart, fetchEnd };
+  return {
+    todayKey,
+    tomorrowKey: addDaysToDateKey(todayKey, 1),
+    weekStartKey,
+    weekEndKey,
+    monthStartKey,
+    monthEndKey,
+    lookupEndKey,
+    fetchStart: koreanDateTimeToUtcDate(addDaysToDateKey(fetchStartKey, -1)),
+    fetchEnd: koreanDateTimeToUtcDate(addDaysToDateKey(fetchEndKey, 1), 23, 59, 59, 999),
+  };
 }
 
 async function readGoogleError(response) {
@@ -100,7 +162,7 @@ export async function GET(request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const { todayStart, tomorrowStart, weekEnd, monthStart, monthEnd, fetchStart, fetchEnd } = getDateRange(searchParams);
+    const { todayKey, weekStartKey, weekEndKey, monthStartKey, monthEndKey, fetchStart, fetchEnd } = getDateRange(searchParams);
     const params = new URLSearchParams({
       timeMin: fetchStart.toISOString(),
       timeMax: fetchEnd.toISOString(),
@@ -126,18 +188,18 @@ export async function GET(request) {
 
     const data = await response.json();
     const lookupEvents = (data.items || []).map(normalizeEvent);
-    const monthEvents = lookupEvents.filter((event) => {
-      const start = new Date(event.start);
-      return start >= monthStart && start <= monthEnd;
-    });
-    const todayEvents = lookupEvents.filter((event) => {
-      const start = new Date(event.start);
-      return start >= todayStart && start < tomorrowStart;
-    });
-    const weekEvents = lookupEvents.filter((event) => {
-      const start = new Date(event.start);
-      return start >= todayStart && start <= weekEnd;
-    });
+    const monthEvents = lookupEvents.filter((event) => isDateKeyInRange(event.dateKey, monthStartKey, monthEndKey));
+    const todayEvents = lookupEvents.filter((event) => event.dateKey === todayKey);
+    const weekEvents = lookupEvents.filter((event) => isDateKeyInRange(event.dateKey, weekStartKey, weekEndKey));
+
+    if (process.env.NODE_ENV === "development") {
+      lookupEvents.forEach((event) => {
+        console.debug("[calendar-api] event date key", {
+          summary: event.title,
+          eventDateKey: event.dateKey,
+        });
+      });
+    }
 
     return NextResponse.json({
       today: todayEvents,
