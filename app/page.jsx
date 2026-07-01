@@ -1489,6 +1489,7 @@ const driveSortLabels = {
 };
 
 const DRIVE_PAGE_SIZE = 10;
+const DASHBOARD_DRIVE_PAGE_SIZE = 10;
 
 function getDriveFileCategory(file = {}) {
   const name = (file.name || "").toLowerCase();
@@ -2326,6 +2327,7 @@ function WeatherView({ weather, weatherStatus, weatherError }) {
 function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
+  const [dashboardDrivePage, setDashboardDrivePage] = useState(1);
   const scheduleOptions = [
     { key: "today", label: "오늘의 일정" },
     { key: "week", label: "이번 주 일정" },
@@ -2333,6 +2335,26 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
   ];
   const selectedSchedule = scheduleOptions.find((option) => option.key === scheduleRange) || scheduleOptions[0];
   const selectedScheduleEvents = getDashboardScheduleEvents(calendarEvents, scheduleRange, todayDate);
+  const dashboardDriveTotal = driveFilesData.length;
+  const dashboardDriveTotalPages = Math.max(1, Math.ceil(dashboardDriveTotal / DASHBOARD_DRIVE_PAGE_SIZE));
+  const safeDashboardDrivePage = Math.min(dashboardDrivePage, dashboardDriveTotalPages);
+  const dashboardDriveStartIndex = (safeDashboardDrivePage - 1) * DASHBOARD_DRIVE_PAGE_SIZE;
+  const dashboardDriveEndIndex = dashboardDriveStartIndex + DASHBOARD_DRIVE_PAGE_SIZE;
+  const paginatedDashboardDriveFiles = driveFilesData.slice(dashboardDriveStartIndex, dashboardDriveEndIndex);
+  const dashboardDriveVisibleStart = dashboardDriveTotal === 0 ? 0 : dashboardDriveStartIndex + 1;
+  const dashboardDriveVisibleEnd = dashboardDriveTotal === 0 ? 0 : Math.min(dashboardDriveEndIndex, dashboardDriveTotal);
+  const canGoPreviousDashboardDrivePage = safeDashboardDrivePage > 1;
+  const canGoNextDashboardDrivePage = safeDashboardDrivePage < dashboardDriveTotalPages;
+
+  useEffect(() => {
+    setDashboardDrivePage(1);
+  }, [driveFilesData]);
+
+  useEffect(() => {
+    if (dashboardDrivePage > dashboardDriveTotalPages) {
+      setDashboardDrivePage(dashboardDriveTotalPages);
+    }
+  }, [dashboardDrivePage, dashboardDriveTotalPages]);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
@@ -2401,11 +2423,38 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
       <GlassCard className="xl:col-span-4 xl:row-span-2">
         <CardHeader icon={FolderOpen} title="최근 Google 드라이브 파일" />
         <DriveFileList
-          files={driveFilesData}
+          files={paginatedDashboardDriveFiles}
           emptyMessage={status === "authenticated" ? "최근 수정된 Google Drive 파일이 없습니다." : "Google 계정을 연결하면 Drive 파일을 볼 수 있어요."}
           onRequestDelete={onRequestDriveDelete}
           deletingFileId={deletingDriveFileId}
         />
+        {dashboardDriveTotal > 0 && (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/10 px-5 py-4 text-xs text-slate-400">
+            <span>
+              {dashboardDriveTotal}개 중 {dashboardDriveVisibleStart}–{dashboardDriveVisibleEnd}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="대시보드 Drive 이전 페이지"
+                disabled={!canGoPreviousDashboardDrivePage}
+                onClick={() => setDashboardDrivePage((page) => Math.max(1, page - 1))}
+                className="rounded-lg border border-white/10 bg-white/[0.035] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/[0.035] disabled:hover:text-slate-300"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="대시보드 Drive 다음 페이지"
+                disabled={!canGoNextDashboardDrivePage}
+                onClick={() => setDashboardDrivePage((page) => Math.min(dashboardDriveTotalPages, page + 1))}
+                className="rounded-lg border border-white/10 bg-white/[0.035] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/[0.035] disabled:hover:text-slate-300"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
         {driveDeleteMessage && (
           <p className={`px-5 pb-4 text-sm ${driveDeleteMessageType === "success" ? "text-emerald-200" : "text-rose-200"}`}>
             {driveDeleteMessage}
