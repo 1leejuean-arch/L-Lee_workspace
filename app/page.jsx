@@ -1459,11 +1459,25 @@ const driveCategoryLabels = {
 const driveFilterTabs = [
   ["all", "전체"],
   ["folder", "폴더"],
-  ["document", "문서"],
-  ["pdf", "PDF"],
-  ["image", "이미지"],
-  ["video", "동영상"],
   ["hwp", "한글"],
+  ["image", "이미지"],
+  ["pdf", "PDF"],
+  ["document", "문서"],
+  ["spreadsheet", "스프레드시트"],
+  ["presentation", "프레젠테이션"],
+  ["video", "동영상"],
+  ["archive", "압축파일"],
+  ["other", "기타"],
+];
+
+const driveSummaryCategories = [
+  ["all", "전체"],
+  ["folder", "폴더"],
+  ["hwp", "한글"],
+  ["image", "이미지"],
+  ["pdf", "PDF"],
+  ["document", "문서"],
+  ["video", "동영상"],
   ["other", "기타"],
 ];
 
@@ -1505,14 +1519,12 @@ function getDriveFileSortValue(file, sortMode) {
 
 function getFilteredDriveFiles(files, { filter, query, sortMode, viewMode }) {
   const normalizedQuery = normalizeSearchText(query);
-  const visibleFiles = viewMode === "recent" ? files.slice(0, 10) : files;
-  const directFilterCategories = new Set(["folder", "document", "pdf", "image", "video", "hwp"]);
+  const visibleFiles = viewMode === "recent" ? files.slice(0, 20) : files;
 
   return visibleFiles
     .filter((file) => {
       const category = getDriveFileCategory(file);
       if (filter === "all") return true;
-      if (filter === "other") return !directFilterCategories.has(category);
       return category === filter;
     })
     .filter((file) => !normalizedQuery || normalizeSearchText(file.name).includes(normalizedQuery))
@@ -3055,7 +3067,7 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
                       : "border-white/10 bg-white/[0.035] text-slate-400 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  {label}
+                  {label} {filter === "all" ? categoryCounts.total || 0 : categoryCounts[filter] || 0}
                 </button>
               ))}
             </div>
@@ -3070,7 +3082,8 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
             </label>
           </div>
           <p className="text-xs text-slate-500">
-            {driveViewMode === "recent" ? "최근 파일 10개" : `전체 파일 ${files.length}개`} · {driveSortLabels[driveSortMode]} · {getDriveCategoryLabel(activeFilter)}
+            {driveViewMode === "recent" ? "최근 파일 20개" : `전체 파일 ${files.length}개`} · {driveSortLabels[driveSortMode]} · {getDriveCategoryLabel(activeFilter)}
+            {driveViewMode === "all" && files.length >= 100 ? " · 최대 100개까지 표시 중" : ""}
           </p>
         </div>
         <DriveFileList
@@ -3098,15 +3111,10 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
             </div>
           </div>
           <div className="mt-4 grid gap-3">
-            {[
-              ["전체 파일", categoryCounts.total || 0],
-              ["폴더", categoryCounts.folder || 0],
-              ["이미지", categoryCounts.image || 0],
-              ["PDF", categoryCounts.pdf || 0],
-            ].map(([label, count]) => (
+            {driveSummaryCategories.map(([category, label]) => (
               <div key={label} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.035] p-3">
                 <span className="text-sm text-slate-200">{label}</span>
-                <span className="text-xs text-slate-500">{count}개</span>
+                <span className="text-xs text-slate-500">{category === "all" ? categoryCounts.total || 0 : categoryCounts[category] || 0}개</span>
               </div>
             ))}
           </div>
