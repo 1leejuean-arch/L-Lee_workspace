@@ -1517,11 +1517,10 @@ function getDriveFileSortValue(file, sortMode) {
   return new Date(file.modifiedTime || 0).getTime();
 }
 
-function getFilteredDriveFiles(files, { filter, query, sortMode, viewMode }) {
+function getFilteredDriveFiles(files, { filter, query, sortMode }) {
   const normalizedQuery = normalizeSearchText(query);
-  const visibleFiles = viewMode === "recent" ? files.slice(0, 20) : files;
 
-  return visibleFiles
+  return files
     .filter((file) => {
       const category = getDriveFileCategory(file);
       if (filter === "all") return true;
@@ -2970,17 +2969,38 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   const [driveViewMode, setDriveViewMode] = useState("recent");
   const [driveSortMode, setDriveSortMode] = useState("recent");
   const [menuOpen, setMenuOpen] = useState(false);
-  const categoryCounts = useMemo(() => getDriveCategoryCounts(files), [files]);
-  const visibleFiles = useMemo(
+  const allLoadedFiles = files;
+  const recentWindowFiles = useMemo(() => allLoadedFiles.slice(0, 20), [allLoadedFiles]);
+  const baseFilesForCurrentView = driveViewMode === "recent" ? recentWindowFiles : allLoadedFiles;
+  const allLoadedCategoryCounts = useMemo(() => getDriveCategoryCounts(allLoadedFiles), [allLoadedFiles]);
+  const currentViewCategoryCounts = useMemo(() => getDriveCategoryCounts(baseFilesForCurrentView), [baseFilesForCurrentView]);
+  const totalFilteredFiles = useMemo(
     () =>
-      getFilteredDriveFiles(files, {
+      getFilteredDriveFiles(allLoadedFiles, {
         filter: activeFilter,
         query: driveQuery,
         sortMode: driveSortMode,
-        viewMode: driveViewMode,
       }),
-    [activeFilter, driveQuery, driveSortMode, driveViewMode, files],
+    [activeFilter, driveQuery, driveSortMode, allLoadedFiles],
   );
+  const displayedFiles = useMemo(
+    () =>
+      getFilteredDriveFiles(baseFilesForCurrentView, {
+        filter: activeFilter,
+        query: driveQuery,
+        sortMode: driveSortMode,
+      }),
+    [activeFilter, baseFilesForCurrentView, driveQuery, driveSortMode],
+  );
+  const activeFilterLabel = getDriveCategoryLabel(activeFilter);
+  const filterCountForButtons = driveViewMode === "recent" ? currentViewCategoryCounts : allLoadedCategoryCounts;
+  const totalCountForActiveFilter = activeFilter === "all" ? allLoadedFiles.length : allLoadedCategoryCounts[activeFilter] || 0;
+  const hasSearchQuery = Boolean(driveQuery.trim());
+  const listStatusText = hasSearchQuery
+    ? `검색 결과 ${displayedFiles.length}개 표시 중 · ${activeFilterLabel} 필터 적용`
+    : driveViewMode === "recent"
+      ? `최근 파일 ${recentWindowFiles.length}개 중 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · 전체 ${activeFilterLabel} ${totalCountForActiveFilter}개 · ${driveSortLabels[driveSortMode]}`
+      : `전체 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · ${driveSortLabels[driveSortMode]}`;
   const emptyMessage =
     status !== "authenticated"
       ? "Google Drive 권한이 필요합니다. 다시 로그인해주세요."
@@ -3067,7 +3087,7 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
                       : "border-white/10 bg-white/[0.035] text-slate-400 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  {label} {filter === "all" ? categoryCounts.total || 0 : categoryCounts[filter] || 0}
+                  {label} {filter === "all" ? filterCountForButtons.total || 0 : filterCountForButtons[filter] || 0}
                 </button>
               ))}
             </div>
@@ -3082,12 +3102,17 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
             </label>
           </div>
           <p className="text-xs text-slate-500">
-            {driveViewMode === "recent" ? "최근 파일 20개" : `전체 파일 ${files.length}개`} · {driveSortLabels[driveSortMode]} · {getDriveCategoryLabel(activeFilter)}
-            {driveViewMode === "all" && files.length >= 100 ? " · 최대 100개까지 표시 중" : ""}
+            {listStatusText}
+            {driveViewMode === "all" && allLoadedFiles.length >= 100 ? " · 최대 100개까지 표시 중" : ""}
           </p>
+          {driveViewMode === "recent" && !hasSearchQuery && totalFilteredFiles.length > displayedFiles.length && (
+            <p className="text-xs text-cyan-200/75">
+              최근 파일 기준으로 표시 중입니다. 전체 결과를 보려면 점 3개 메뉴에서 전체 파일 보기를 선택하세요.
+            </p>
+          )}
         </div>
         <DriveFileList
-          files={visibleFiles}
+          files={displayedFiles}
           detailed
           emptyMessage={driveStatus === "loading" ? "드라이브 파일을 불러오는 중..." : emptyMessage}
           onRequestDelete={onRequestDelete}
@@ -3114,7 +3139,7 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
             {driveSummaryCategories.map(([category, label]) => (
               <div key={label} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.035] p-3">
                 <span className="text-sm text-slate-200">{label}</span>
-                <span className="text-xs text-slate-500">{category === "all" ? categoryCounts.total || 0 : categoryCounts[category] || 0}개</span>
+                <span className="text-xs text-slate-500">{category === "all" ? allLoadedCategoryCounts.total || 0 : allLoadedCategoryCounts[category] || 0}개</span>
               </div>
             ))}
           </div>
