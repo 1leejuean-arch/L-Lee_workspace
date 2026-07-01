@@ -1489,7 +1489,7 @@ const driveSortLabels = {
 };
 
 const DRIVE_PAGE_SIZE = 10;
-const DASHBOARD_DRIVE_PAGE_SIZE = 10;
+const DASHBOARD_DRIVE_PAGE_SIZE = 5;
 
 function getDriveFileCategory(file = {}) {
   const name = (file.name || "").toLowerCase();
