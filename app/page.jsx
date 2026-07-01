@@ -1382,7 +1382,33 @@ function MiniCalendar({ monthDays, markedDays, currentDay, visibleDate = stableI
   );
 }
 
-function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표시할 일정이 없습니다.", onEditEvent }) {
+function formatAgendaDateLabel(event) {
+  const dateKey = getEventDateKey(event);
+  const parts = parseDateKey(dateKey);
+  if (!parts) return "";
+
+  const eventDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const currentYear = parseDateKey(getKoreanDateKey(new Date()))?.year;
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: parts.year !== currentYear ? "numeric" : undefined,
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    timeZone: KOREA_TIME_ZONE,
+  }).format(eventDate);
+}
+
+function getAgendaMetaText(event, showEventDate = false) {
+  const isAllDay = Boolean(event.allDay || (typeof event.start === "string" && DATE_KEY_PATTERN.test(event.start)));
+  const timeText = isAllDay ? "하루 종일" : event.time;
+  const scheduleText = isAllDay ? timeText : `${timeText} · ${event.duration}`;
+  const dateText = showEventDate ? formatAgendaDateLabel(event) : "";
+
+  return [dateText, scheduleText].filter(Boolean).join(" · ");
+}
+
+function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표시할 일정이 없습니다.", onEditEvent, showEventDate = false }) {
   const visibleEvents = events.slice(0, compact ? 4 : events.length);
 
   if (visibleEvents.length === 0) {
@@ -1398,7 +1424,7 @@ function AgendaList({ events = agendaItems, compact = false, emptyMessage = "표
             <p className="truncate text-sm font-medium text-slate-100">{item.title}</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
               <Clock3 className="h-3.5 w-3.5" />
-              <span>{item.time} · {item.duration}</span>
+              <span>{getAgendaMetaText(item, showEventDate)}</span>
               <span>{item.place}</span>
             </div>
           </div>
@@ -2815,6 +2841,7 @@ function CalendarView({ monthDays, markedDays, currentDay, visibleDate, onMonthC
           events={selectedEvents}
           emptyMessage={emptyMessage}
           onEditEvent={setEditingEvent}
+          showEventDate={scheduleMode !== "day"}
         />
         <CalendarStatusNotice status={status} calendarStatus={calendarStatus} />
       </GlassCard>

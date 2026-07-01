@@ -67,7 +67,7 @@ function formatTime(value) {
 }
 
 function formatDuration(startValue, endValue, isAllDay) {
-  if (isAllDay || !startValue || !endValue) return isAllDay ? "종일" : "시간 미정";
+  if (isAllDay || !startValue || !endValue) return isAllDay ? "하루 종일" : "시간 미정";
 
   const start = new Date(startValue);
   const end = new Date(endValue);
@@ -88,7 +88,7 @@ function normalizeEvent(event, index) {
   return {
     id: event.id,
     title: event.summary || "제목 없는 일정",
-    time: isAllDay ? "종일" : formatTime(startValue),
+    time: isAllDay ? "하루 종일" : formatTime(startValue),
     duration: formatDuration(startValue, endValue, isAllDay),
     place: event.location || event.hangoutLink || event.organizer?.email || "Google Calendar",
     location: event.location || "",
