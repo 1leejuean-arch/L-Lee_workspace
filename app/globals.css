@@ -35,14 +35,15 @@ body {
 }
 
 .workspace-shell.theme-light-glass {
-  --workspace-bg: #f8fafc;
+  --workspace-bg: #f6f8fb;
   --workspace-card: #ffffff;
-  --workspace-card-hover: #f9fafb;
-  --workspace-border: rgba(15, 23, 42, 0.12);
-  --workspace-accent-soft: rgba(37, 99, 235, 0.28);
-  --workspace-ambient: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
-  --workspace-grid: linear-gradient(rgba(15, 23, 42, 0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px);
+  --workspace-card-hover: #f9fbff;
+  --workspace-border: #dbe3ef;
+  --workspace-accent-soft: #93c5fd;
+  --workspace-ambient: linear-gradient(180deg, #f8fafc 0%, #f6f8fb 48%, #eef4fb 100%);
+  --workspace-grid: linear-gradient(rgba(30, 41, 59, 0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(30, 41, 59, 0.018) 1px, transparent 1px);
   color: #1e293b;
+  color-scheme: light;
 }
 
 .workspace-shell.theme-rgb-glass {
@@ -58,7 +59,7 @@ body {
 .workspace-shell.theme-light-glass .text-white,
 .workspace-shell.theme-light-glass .text-slate-100,
 .workspace-shell.theme-light-glass .text-slate-200 {
-  color: #172033;
+  color: #0f172a;
 }
 
 .workspace-shell.theme-light-glass .text-slate-300,
@@ -68,6 +69,45 @@ body {
 
 .workspace-shell.theme-light-glass .text-slate-500 {
   color: #64748b;
+}
+
+.workspace-shell.theme-light-glass .text-slate-600 {
+  color: #64748b;
+}
+
+.workspace-shell.theme-light-glass .text-cyan-50,
+.workspace-shell.theme-light-glass .text-cyan-100,
+.workspace-shell.theme-light-glass .text-cyan-200,
+.workspace-shell.theme-light-glass .text-cyan-300 {
+  color: #0369a1;
+}
+
+.workspace-shell.theme-light-glass .text-violet-200,
+.workspace-shell.theme-light-glass .text-violet-300 {
+  color: #6d5bd0;
+}
+
+.workspace-shell.theme-light-glass .text-rose-100,
+.workspace-shell.theme-light-glass .text-rose-200 {
+  color: #be123c;
+}
+
+.workspace-shell.theme-light-glass .text-amber-50,
+.workspace-shell.theme-light-glass .text-amber-200 {
+  color: #92400e;
+}
+
+.workspace-shell.theme-light-glass .border-white\/10,
+.workspace-shell.theme-light-glass .border-white\/15,
+.workspace-shell.theme-light-glass .border-white\/\[0\.06\] {
+  border-color: #e2e8f0;
+}
+
+.workspace-shell.theme-light-glass .border-cyan-300\/20,
+.workspace-shell.theme-light-glass .border-cyan-300\/25,
+.workspace-shell.theme-light-glass .border-cyan-300\/30,
+.workspace-shell.theme-light-glass .border-cyan-300\/40 {
+  border-color: #bfdbfe;
 }
 
 .workspace-shell.theme-light-glass .bg-slate-950\/35,
@@ -80,10 +120,125 @@ body {
 .workspace-shell.theme-light-glass .bg-white\/\[0\.035\],
 .workspace-shell.theme-light-glass .bg-white\/\[0\.04\],
 .workspace-shell.theme-light-glass .bg-white\/\[0\.045\],
-.workspace-shell.theme-light-glass .bg-white\/\[0\.055\] {
+.workspace-shell.theme-light-glass .bg-white\/\[0\.055\],
+.workspace-shell.theme-light-glass .bg-white\/\[0\.06\] {
   background-color: #ffffff;
   background-image: none;
   backdrop-filter: none;
+}
+
+.workspace-shell.theme-light-glass .bg-white\/10,
+.workspace-shell.theme-light-glass .bg-white\/\[0\.05\],
+.workspace-shell.theme-light-glass .bg-white\/\[0\.07\],
+.workspace-shell.theme-light-glass .bg-white\/\[0\.08\] {
+  background-color: #f1f5f9;
+}
+
+.workspace-shell.theme-light-glass .bg-slate-800 {
+  background-color: #e2e8f0;
+}
+
+.workspace-shell.theme-light-glass .bg-slate-950\/20,
+.workspace-shell.theme-light-glass .bg-slate-950\/30,
+.workspace-shell.theme-light-glass .bg-slate-950\/60,
+.workspace-shell.theme-light-glass .bg-slate-950\/90 {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.workspace-shell.theme-light-glass .bg-cyan-300 {
+  background-color: #0ea5e9;
+  color: #ffffff;
+}
+
+.workspace-shell.theme-light-glass .hover\:bg-cyan-200:hover {
+  background-color: #0284c7;
+}
+
+.workspace-shell.theme-light-glass .bg-cyan-300\/10,
+.workspace-shell.theme-light-glass .bg-cyan-300\/\[0\.07\],
+.workspace-shell.theme-light-glass .bg-cyan-300\/5 {
+  background-color: #e0f2fe;
+}
+
+.workspace-shell.theme-light-glass .bg-rose-400\/10 {
+  background-color: #fff1f2;
+}
+
+.workspace-shell.theme-light-glass .bg-amber-300\/10 {
+  background-color: #fffbeb;
+}
+
+.workspace-shell.theme-light-glass input,
+.workspace-shell.theme-light-glass textarea,
+.workspace-shell.theme-light-glass select {
+  background-color: #ffffff;
+  border-color: #dbe3ef;
+  color: #0f172a;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
+}
+
+.workspace-shell.theme-light-glass input::placeholder,
+.workspace-shell.theme-light-glass textarea::placeholder {
+  color: #94a3b8;
+}
+
+.workspace-shell.theme-light-glass input:focus,
+.workspace-shell.theme-light-glass textarea:focus,
+.workspace-shell.theme-light-glass select:focus {
+  border-color: #7dd3fc;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+}
+
+.workspace-shell.theme-light-glass aside {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 1px 0 0 rgba(15, 23, 42, 0.02);
+}
+
+.workspace-shell.theme-light-glass aside > div:first-child,
+.workspace-shell.theme-light-glass aside > div:last-child {
+  border-color: #e2e8f0;
+}
+
+.workspace-shell.theme-light-glass aside nav button {
+  color: #475569;
+}
+
+.workspace-shell.theme-light-glass aside nav button.border {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color: #0f2f57;
+  font-weight: 600;
+}
+
+.workspace-shell.theme-light-glass aside nav button:not(.border):hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.workspace-shell.theme-light-glass header {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035);
+}
+
+.workspace-shell.theme-light-glass header button,
+.workspace-shell.theme-light-glass .workspace-scrollbar button {
+  border-color: #dbe3ef;
+}
+
+.workspace-shell.theme-light-glass header button:hover,
+.workspace-shell.theme-light-glass .hover\:bg-white\/10:hover,
+.workspace-shell.theme-light-glass .hover\:bg-white\/\[0\.06\]:hover,
+.workspace-shell.theme-light-glass .hover\:bg-white\/\[0\.07\]:hover,
+.workspace-shell.theme-light-glass .hover\:bg-white\/\[0\.08\]:hover {
+  background-color: #eef6ff;
+  color: #0f172a;
+}
+
+.workspace-shell.theme-light-glass section.shadow-glow {
+  background: #ffffff;
+  border-color: #dbe3ef;
 }
 
 .workspace-shell.theme-rgb-glass .shadow-glow {
@@ -91,7 +246,49 @@ body {
 }
 
 .workspace-shell.theme-light-glass .shadow-glow {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 28px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 24px rgba(15, 23, 42, 0.045);
+}
+
+.workspace-shell.theme-light-glass .shadow-2xl,
+.workspace-shell.theme-light-glass .shadow-lg {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.workspace-shell.theme-light-glass .rounded-lg.border.bg-gradient-to-br {
+  background-image: linear-gradient(135deg, #f0f9ff, #f8fafc);
+  border-color: #bfdbfe;
+}
+
+.workspace-shell.theme-light-glass button.border-cyan-300\/40,
+.workspace-shell.theme-light-glass button.border-cyan-300\/30 {
+  background-color: #eff6ff;
+  color: #0f2f57;
+}
+
+.workspace-shell.theme-light-glass .fixed.right-0 .bg-slate-950\/90 {
+  background-color: rgba(255, 255, 255, 0.96);
+  border-color: #bfdbfe;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.1);
+}
+
+.workspace-shell.theme-light-glass .fixed.right-0 .rounded-l-lg {
+  background-color: #eff6ff;
+  color: #0369a1;
+}
+
+.workspace-shell.theme-light-glass .fixed.right-0 .rounded-l-xl {
+  background-color: rgba(255, 255, 255, 0.96);
+}
+
+.workspace-shell.theme-light-glass .absolute.z-30,
+.workspace-shell.theme-light-glass .absolute.z-20 {
+  background-color: #ffffff;
+  border-color: #dbe3ef;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+}
+
+.workspace-shell.theme-light-glass .bg-gradient-to-r.from-cyan-400 {
+  background-image: linear-gradient(90deg, #0ea5e9, #60a5fa);
 }
 
 .workspace-shell.theme-rgb-glass aside,
