@@ -12,36 +12,18 @@ function getFileCategory(file = {}) {
   const extension = getFileExtension(file.name || "");
 
   if (mimeType === "application/vnd.google-apps.folder") return "folder";
-  if (
-    ["hwp", "hwpx"].includes(extension) ||
-    mimeType.includes("hwp") ||
-    mimeType.includes("hwpx") ||
-    mimeType.includes("haansoft") ||
-    mimeType.includes("hancom")
-  ) return "hwp";
-  if (mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(extension)) return "image";
-  if (mimeType === "application/pdf" || extension === "pdf") return "pdf";
-  if (mimeType.startsWith("video/") || ["mp4", "mov", "avi", "webm", "mkv"].includes(extension)) return "video";
-  if (
-    mimeType === "application/vnd.google-apps.document" ||
-    mimeType.includes("wordprocessingml.document") ||
-    mimeType.includes("msword") ||
-    mimeType === "text/plain" ||
-    ["doc", "docx", "txt", "rtf"].includes(extension)
-  ) return "document";
-  if (
-    mimeType === "application/vnd.google-apps.spreadsheet" ||
-    mimeType.includes("spreadsheetml.sheet") ||
-    mimeType.includes("ms-excel") ||
-    ["xls", "xlsx", "csv"].includes(extension)
-  ) return "spreadsheet";
-  if (
-    mimeType === "application/vnd.google-apps.presentation" ||
-    mimeType.includes("presentationml.presentation") ||
-    mimeType.includes("ms-powerpoint") ||
-    ["ppt", "pptx"].includes(extension)
-  ) return "presentation";
-  if (["zip", "rar", "7z", "tar", "gz"].includes(extension) || mimeType.includes("zip") || mimeType.includes("rar") || mimeType.includes("7z")) return "archive";
+  if (mimeType === "application/vnd.google-apps.document") return "document";
+  if (mimeType === "application/vnd.google-apps.spreadsheet") return "spreadsheet";
+  if (mimeType === "application/vnd.google-apps.presentation") return "presentation";
+
+  if (extension === "txt") return "document";
+  if (extension === "xlsx") return "spreadsheet";
+  if (extension === "pptx") return "presentation";
+  if (["png", "jpg", "jpeg"].includes(extension)) return "image";
+  if (extension === "pdf") return "pdf";
+  if (extension === "mp4") return "video";
+  if (["hwp", "hwpx"].includes(extension)) return "hwp";
+
   return "other";
 }
 
@@ -98,17 +80,18 @@ export async function GET() {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
-    const maxFiles = 100;
-    const maxPages = 3;
+    const maxFiles = 1000;
+    const maxPages = 10;
     const fetchedFiles = [];
     let nextPageToken = "";
+    let pagesFetched = 0;
 
     for (let page = 0; page < maxPages && fetchedFiles.length < maxFiles; page += 1) {
       const params = new URLSearchParams({
-        pageSize: String(Math.min(100, maxFiles - fetchedFiles.length)),
+        pageSize: String(Math.min(1000, maxFiles - fetchedFiles.length)),
         orderBy: "modifiedTime desc",
-        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,iconLink,size,owners(displayName,emailAddress),parents)",
-        q: "trashed=false",
+        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,size,webViewLink,iconLink,owners,parents)",
+        q: "trashed = false",
         supportsAllDrives: "true",
         includeItemsFromAllDrives: "true",
       });
@@ -130,6 +113,7 @@ export async function GET() {
       }
 
       const data = await response.json();
+      pagesFetched += 1;
       fetchedFiles.push(...(data.files || []));
       nextPageToken = data.nextPageToken || "";
       if (!nextPageToken) break;
@@ -155,6 +139,19 @@ export async function GET() {
         sizeBytes: Number(file.size) || 0,
       };
     });
+
+    const categoryCounts = files.reduce((counts, file) => {
+      counts[file.fileCategory] = (counts[file.fileCategory] || 0) + 1;
+      return counts;
+    }, {});
+
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[drive-files] loaded", {
+        totalFiles: files.length,
+        pagesFetched,
+        categoryCounts,
+      });
+    }
 
     return NextResponse.json({
       files,

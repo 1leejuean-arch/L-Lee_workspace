@@ -1452,7 +1452,6 @@ const driveCategoryLabels = {
   image: "이미지",
   video: "동영상",
   hwp: "한글",
-  archive: "압축",
   other: "기타",
 };
 
@@ -1466,7 +1465,6 @@ const driveFilterTabs = [
   ["spreadsheet", "스프레드시트"],
   ["presentation", "프레젠테이션"],
   ["video", "동영상"],
-  ["archive", "압축파일"],
   ["other", "기타"],
 ];
 
@@ -1477,6 +1475,8 @@ const driveSummaryCategories = [
   ["image", "이미지"],
   ["pdf", "PDF"],
   ["document", "문서"],
+  ["spreadsheet", "스프레드시트"],
+  ["presentation", "프레젠테이션"],
   ["video", "동영상"],
   ["other", "기타"],
 ];
@@ -1489,6 +1489,24 @@ const driveSortLabels = {
 };
 
 function getDriveFileCategory(file = {}) {
+  const name = (file.name || "").toLowerCase();
+  const mimeType = (file.mimeType || "").toLowerCase();
+  const extensionMatch = name.match(/\.([^.]+)$/);
+  const extension = extensionMatch ? extensionMatch[1] : "";
+
+  if (mimeType === "application/vnd.google-apps.folder") return "folder";
+  if (mimeType === "application/vnd.google-apps.document") return "document";
+  if (mimeType === "application/vnd.google-apps.spreadsheet") return "spreadsheet";
+  if (mimeType === "application/vnd.google-apps.presentation") return "presentation";
+
+  if (extension === "txt") return "document";
+  if (extension === "xlsx") return "spreadsheet";
+  if (extension === "pptx") return "presentation";
+  if (["png", "jpg", "jpeg"].includes(extension)) return "image";
+  if (extension === "pdf") return "pdf";
+  if (extension === "mp4") return "video";
+  if (["hwp", "hwpx"].includes(extension)) return "hwp";
+
   if (file.fileCategory) return file.fileCategory;
   if (file.type === "folder") return "folder";
   if (file.type === "doc") return "document";
@@ -2969,7 +2987,15 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   const [driveViewMode, setDriveViewMode] = useState("recent");
   const [driveSortMode, setDriveSortMode] = useState("recent");
   const [menuOpen, setMenuOpen] = useState(false);
-  const allLoadedFiles = files;
+  const allLoadedFiles = useMemo(
+    () =>
+      [...files].sort(
+        (first, second) =>
+          new Date(second.modifiedTime || second.updated || 0).getTime() -
+          new Date(first.modifiedTime || first.updated || 0).getTime(),
+      ),
+    [files],
+  );
   const recentWindowFiles = useMemo(() => allLoadedFiles.slice(0, 20), [allLoadedFiles]);
   const baseFilesForCurrentView = driveViewMode === "recent" ? recentWindowFiles : allLoadedFiles;
   const allLoadedCategoryCounts = useMemo(() => getDriveCategoryCounts(allLoadedFiles), [allLoadedFiles]);
@@ -2996,9 +3022,8 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   const filterCountForButtons = driveViewMode === "recent" ? currentViewCategoryCounts : allLoadedCategoryCounts;
   const totalCountForActiveFilter = activeFilter === "all" ? allLoadedFiles.length : allLoadedCategoryCounts[activeFilter] || 0;
   const hasSearchQuery = Boolean(driveQuery.trim());
-  const listStatusText = hasSearchQuery
-    ? `검색 결과 ${displayedFiles.length}개 표시 중 · ${activeFilterLabel} 필터 적용`
-    : driveViewMode === "recent"
+  const listStatusText =
+    driveViewMode === "recent"
       ? `최근 파일 ${recentWindowFiles.length}개 중 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · 전체 ${activeFilterLabel} ${totalCountForActiveFilter}개 · ${driveSortLabels[driveSortMode]}`
       : `전체 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · ${driveSortLabels[driveSortMode]}`;
   const emptyMessage =
@@ -3103,7 +3128,7 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
           </div>
           <p className="text-xs text-slate-500">
             {listStatusText}
-            {driveViewMode === "all" && allLoadedFiles.length >= 100 ? " · 최대 100개까지 표시 중" : ""}
+            {hasSearchQuery ? ` · "${driveQuery.trim()}" 검색 적용` : ""}
           </p>
           {driveViewMode === "recent" && !hasSearchQuery && totalFilteredFiles.length > displayedFiles.length && (
             <p className="text-xs text-cyan-200/75">
