@@ -1488,6 +1488,8 @@ const driveSortLabels = {
   size: "용량순",
 };
 
+const DRIVE_PAGE_SIZE = 50;
+
 function getDriveFileCategory(file = {}) {
   const name = (file.name || "").toLowerCase();
   const mimeType = (file.mimeType || "").toLowerCase();
@@ -2986,8 +2988,9 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   const [driveQuery, setDriveQuery] = useState("");
   const [driveViewMode, setDriveViewMode] = useState("recent");
   const [driveSortMode, setDriveSortMode] = useState("recent");
+  const [currentDrivePage, setCurrentDrivePage] = useState(1);
   const [menuOpen, setMenuOpen] = useState(false);
-  const allLoadedFiles = useMemo(
+  const allDriveFiles = useMemo(
     () =>
       [...files].sort(
         (first, second) =>
@@ -2996,36 +2999,65 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
       ),
     [files],
   );
-  const recentWindowFiles = useMemo(() => allLoadedFiles.slice(0, 20), [allLoadedFiles]);
-  const baseFilesForCurrentView = driveViewMode === "recent" ? recentWindowFiles : allLoadedFiles;
-  const allLoadedCategoryCounts = useMemo(() => getDriveCategoryCounts(allLoadedFiles), [allLoadedFiles]);
-  const currentViewCategoryCounts = useMemo(() => getDriveCategoryCounts(baseFilesForCurrentView), [baseFilesForCurrentView]);
-  const totalFilteredFiles = useMemo(
+  const recentWindowFiles = useMemo(() => allDriveFiles.slice(0, 20), [allDriveFiles]);
+  const modeBaseFiles = driveViewMode === "recent" ? recentWindowFiles : allDriveFiles;
+  const allLoadedCategoryCounts = useMemo(() => getDriveCategoryCounts(allDriveFiles), [allDriveFiles]);
+  const currentViewCategoryCounts = useMemo(() => getDriveCategoryCounts(modeBaseFiles), [modeBaseFiles]);
+  const allMatchingDriveFiles = useMemo(
     () =>
-      getFilteredDriveFiles(allLoadedFiles, {
+      getFilteredDriveFiles(allDriveFiles, {
         filter: activeFilter,
         query: driveQuery,
         sortMode: driveSortMode,
       }),
-    [activeFilter, driveQuery, driveSortMode, allLoadedFiles],
+    [activeFilter, driveQuery, driveSortMode, allDriveFiles],
   );
-  const displayedFiles = useMemo(
+  const filteredDriveFiles = useMemo(() => {
+    const normalizedQuery = normalizeSearchText(driveQuery);
+
+    return modeBaseFiles
+      .filter((file) => {
+        const category = getDriveFileCategory(file);
+        if (activeFilter === "all") return true;
+        return category === activeFilter;
+      })
+      .filter((file) => !normalizedQuery || normalizeSearchText(file.name).includes(normalizedQuery));
+  }, [activeFilter, driveQuery, modeBaseFiles]);
+  const sortedDriveFiles = useMemo(
     () =>
-      getFilteredDriveFiles(baseFilesForCurrentView, {
-        filter: activeFilter,
-        query: driveQuery,
-        sortMode: driveSortMode,
+      [...filteredDriveFiles].sort((first, second) => {
+        const firstValue = getDriveFileSortValue(first, driveSortMode);
+        const secondValue = getDriveFileSortValue(second, driveSortMode);
+        if (driveSortMode === "size" || driveSortMode === "recent") return secondValue - firstValue;
+        return String(firstValue).localeCompare(String(secondValue), "ko");
       }),
-    [activeFilter, baseFilesForCurrentView, driveQuery, driveSortMode],
+    [driveSortMode, filteredDriveFiles],
   );
   const activeFilterLabel = getDriveCategoryLabel(activeFilter);
   const filterCountForButtons = driveViewMode === "recent" ? currentViewCategoryCounts : allLoadedCategoryCounts;
-  const totalCountForActiveFilter = activeFilter === "all" ? allLoadedFiles.length : allLoadedCategoryCounts[activeFilter] || 0;
+  const totalCountForActiveFilter = activeFilter === "all" ? allDriveFiles.length : allLoadedCategoryCounts[activeFilter] || 0;
   const hasSearchQuery = Boolean(driveQuery.trim());
+  const shouldPaginateDriveFiles = driveViewMode === "all";
+  const totalPaginationItems = sortedDriveFiles.length;
+  const totalDrivePages = Math.max(1, Math.ceil(totalPaginationItems / DRIVE_PAGE_SIZE));
+  const currentSafeDrivePage = Math.min(currentDrivePage, totalDrivePages);
+  const paginationStartIndex = shouldPaginateDriveFiles ? (currentSafeDrivePage - 1) * DRIVE_PAGE_SIZE : 0;
+  const paginationEndIndex = shouldPaginateDriveFiles ? paginationStartIndex + DRIVE_PAGE_SIZE : sortedDriveFiles.length;
+  const paginatedDriveFiles = shouldPaginateDriveFiles
+    ? sortedDriveFiles.slice(paginationStartIndex, paginationEndIndex)
+    : sortedDriveFiles;
+  const visibleStartNumber = totalPaginationItems === 0 ? 0 : paginationStartIndex + 1;
+  const visibleEndNumber = totalPaginationItems === 0 ? 0 : Math.min(paginationEndIndex, totalPaginationItems);
+  const canGoPreviousDrivePage = shouldPaginateDriveFiles && currentSafeDrivePage > 1;
+  const canGoNextDrivePage = shouldPaginateDriveFiles && currentSafeDrivePage < totalDrivePages;
   const listStatusText =
     driveViewMode === "recent"
-      ? `최근 파일 ${recentWindowFiles.length}개 중 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · 전체 ${activeFilterLabel} ${totalCountForActiveFilter}개 · ${driveSortLabels[driveSortMode]}`
-      : `전체 ${activeFilterLabel} ${displayedFiles.length}개 표시 중 · ${driveSortLabels[driveSortMode]}`;
+      ? `최근 파일 ${recentWindowFiles.length}개 중 ${activeFilterLabel} ${paginatedDriveFiles.length}개 표시 중 · 전체 ${activeFilterLabel} ${totalCountForActiveFilter}개 · ${driveSortLabels[driveSortMode]}`
+      : hasSearchQuery
+        ? `검색 결과 ${totalPaginationItems}개 중 ${visibleStartNumber}–${visibleEndNumber} 표시 중 · ${driveSortLabels[driveSortMode]}`
+        : activeFilter === "all"
+          ? `전체 파일 ${totalPaginationItems}개 중 ${visibleStartNumber}–${visibleEndNumber} 표시 중 · ${driveSortLabels[driveSortMode]}`
+          : `${activeFilterLabel} ${totalPaginationItems}개 중 ${visibleStartNumber}–${visibleEndNumber} 표시 중 · ${driveSortLabels[driveSortMode]}`;
   const emptyMessage =
     status !== "authenticated"
       ? "Google Drive 권한이 필요합니다. 다시 로그인해주세요."
@@ -3034,6 +3066,16 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
         : driveViewMode === "recent"
           ? "최근 수정된 Google Drive 파일이 없습니다."
           : "표시할 Google Drive 파일이 없습니다.";
+
+  useEffect(() => {
+    setCurrentDrivePage(1);
+  }, [activeFilter, driveQuery, driveSortMode, driveViewMode]);
+
+  useEffect(() => {
+    if (currentDrivePage > totalDrivePages) {
+      setCurrentDrivePage(totalDrivePages);
+    }
+  }, [currentDrivePage, totalDrivePages]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -3047,9 +3089,18 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   }, [menuOpen]);
 
   function selectMenuAction(action) {
-    if (action === "view-all") setDriveViewMode("all");
-    if (action === "view-recent") setDriveViewMode("recent");
-    if (action.startsWith("sort-")) setDriveSortMode(action.replace("sort-", ""));
+    if (action === "view-all") {
+      setDriveViewMode("all");
+      setCurrentDrivePage(1);
+    }
+    if (action === "view-recent") {
+      setDriveViewMode("recent");
+      setCurrentDrivePage(1);
+    }
+    if (action.startsWith("sort-")) {
+      setDriveSortMode(action.replace("sort-", ""));
+      setCurrentDrivePage(1);
+    }
     if (action === "refresh") onRefresh?.();
     setMenuOpen(false);
   }
@@ -3126,18 +3177,44 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
               />
             </label>
           </div>
-          <p className="text-xs text-slate-500">
-            {listStatusText}
-            {hasSearchQuery ? ` · "${driveQuery.trim()}" 검색 적용` : ""}
-          </p>
-          {driveViewMode === "recent" && !hasSearchQuery && totalFilteredFiles.length > displayedFiles.length && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500">{listStatusText}</p>
+            {shouldPaginateDriveFiles && (
+              <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-400">
+                <span className="min-w-0">
+                  {totalPaginationItems}개 중 {visibleStartNumber}–{visibleEndNumber}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="이전 페이지"
+                    disabled={!canGoPreviousDrivePage}
+                    onClick={() => setCurrentDrivePage((page) => Math.max(1, page - 1))}
+                    className="rounded-lg border border-white/10 bg-white/[0.035] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/[0.035] disabled:hover:text-slate-300"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="다음 페이지"
+                    disabled={!canGoNextDrivePage}
+                    onClick={() => setCurrentDrivePage((page) => Math.min(totalDrivePages, page + 1))}
+                    className="rounded-lg border border-white/10 bg-white/[0.035] p-2 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/[0.035] disabled:hover:text-slate-300"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          {driveViewMode === "recent" && !hasSearchQuery && allMatchingDriveFiles.length > paginatedDriveFiles.length && (
             <p className="text-xs text-cyan-200/75">
               최근 파일 기준으로 표시 중입니다. 전체 결과를 보려면 점 3개 메뉴에서 전체 파일 보기를 선택하세요.
             </p>
           )}
         </div>
         <DriveFileList
-          files={displayedFiles}
+          files={paginatedDriveFiles}
           detailed
           emptyMessage={driveStatus === "loading" ? "드라이브 파일을 불러오는 중..." : emptyMessage}
           onRequestDelete={onRequestDelete}
