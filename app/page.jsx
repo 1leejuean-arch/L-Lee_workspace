@@ -1488,7 +1488,7 @@ const driveSortLabels = {
   size: "용량순",
 };
 
-const DRIVE_PAGE_SIZE = 50;
+const DRIVE_PAGE_SIZE = 10;
 
 function getDriveFileCategory(file = {}) {
   const name = (file.name || "").toLowerCase();
