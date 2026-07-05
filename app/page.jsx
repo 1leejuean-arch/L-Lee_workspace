@@ -5,11 +5,15 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import {
   createNoteInSupabase,
   createTaskInSupabase,
+  changeNotePasswordInSupabase,
   deleteNoteFromSupabase,
   deleteTaskFromSupabase,
   fetchNotesFromSupabase,
   fetchTasksFromSupabase,
+  lockNoteInSupabase,
   normalizeWorkspaceTasks,
+  removeNoteLockInSupabase,
+  unlockNoteInSupabase,
   updateNoteInSupabase,
   updateTaskStepsInSupabase,
   updateTaskInSupabase,
@@ -39,6 +43,7 @@ import {
   Instagram,
   LayoutDashboard,
   Link,
+  Lock,
   LogIn,
   LogOut,
   Mail,
@@ -58,6 +63,7 @@ import {
   Sun,
   Thermometer,
   Trash2,
+  Unlock,
   User,
   Wind,
   Youtube,
@@ -197,6 +203,18 @@ function getApiErrorMessage(response, data, text, fallback) {
   }
 
   return data?.error || text || fallback;
+}
+
+function getNoteSecurityMessage(error) {
+  if (error?.code === "INVALID_PASSWORD" || error?.status === 401) {
+    return "비밀번호가 올바르지 않습니다.";
+  }
+
+  if (error?.code === "PASSWORD_TOO_SHORT") {
+    return "비밀번호는 6자리 이상이어야 합니다.";
+  }
+
+  return "메모 보안 작업을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.";
 }
 
 function normalizeCommand(input) {
@@ -2029,7 +2047,10 @@ function SearchResultsPanel({ results, onSelect, expanded, onToggleExpanded }) {
                   <span className="block truncate text-sm font-medium text-slate-100">{result.title}</span>
                   <span className="mt-1 block truncate text-xs text-slate-500">{result.helper}</span>
                 </span>
-                <span className="shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{result.type}</span>
+                <span className="flex shrink-0 items-center gap-1 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">
+                  {result.isLocked && <Lock className="h-3 w-3" />}
+                  {result.type}
+                </span>
               </button>
             ))}
           </div>
@@ -3300,7 +3321,109 @@ function DriveView({ files, driveStatus, status, onRequestDelete, deletingFileId
   );
 }
 
-function NotesView({ notes, noteDraft, setNoteDraft, editingNoteId, setEditingNoteId, onSaveNote, onDeleteNote }) {
+function NoteSecurityModal({ modal, values, setValues, error, status, onClose, onSubmit, onAction }) {
+  if (!modal) return null;
+
+  const isLoading = status === "loading";
+  const titleMap = {
+    set: "메모 비밀번호 설정",
+    unlock: "잠긴 메모 열기",
+    change: "비밀번호 변경",
+    remove: "잠금 제거",
+    actions: "메모 잠금 관리",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-lg border border-white/10 bg-slate-950/95 p-5 shadow-2xl shadow-black/40">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-2 text-cyan-200">
+            <Lock className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-semibold text-white">{titleMap[modal.mode]}</h3>
+            <p className="mt-1 truncate text-sm text-slate-400">{modal.note?.title}</p>
+          </div>
+        </div>
+
+        {modal.mode === "actions" ? (
+          <div className="mt-5 grid gap-2">
+            <button type="button" onClick={() => onAction("lockNow")} className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-slate-100 transition hover:bg-white/10">
+              다시 잠그기
+            </button>
+            <button type="button" onClick={() => onAction("change")} className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-slate-100 transition hover:bg-white/10">
+              비밀번호 변경
+            </button>
+            <button type="button" onClick={() => onAction("remove")} className="rounded-lg border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-left text-sm text-rose-100 transition hover:bg-rose-400/20">
+              잠금 제거
+            </button>
+            <button type="button" onClick={onClose} className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10">
+              취소
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-5 space-y-3">
+            {(modal.mode === "change" || modal.mode === "remove") && (
+              <input
+                type="password"
+                value={values.currentPassword}
+                onChange={(event) => setValues((current) => ({ ...current, currentPassword: event.target.value }))}
+                placeholder="현재 비밀번호"
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+              />
+            )}
+            {(modal.mode === "set" || modal.mode === "unlock") && (
+              <input
+                type="password"
+                value={values.password}
+                onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))}
+                placeholder="비밀번호"
+                autoComplete={modal.mode === "set" ? "new-password" : "current-password"}
+                className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+              />
+            )}
+            {(modal.mode === "set" || modal.mode === "change") && (
+              <>
+                {modal.mode === "change" && (
+                  <input
+                    type="password"
+                    value={values.newPassword}
+                    onChange={(event) => setValues((current) => ({ ...current, newPassword: event.target.value }))}
+                    placeholder="새 비밀번호"
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+                  />
+                )}
+                <input
+                  type="password"
+                  value={values.confirmPassword}
+                  onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))}
+                  placeholder={modal.mode === "change" ? "새 비밀번호 확인" : "비밀번호 확인"}
+                  autoComplete="new-password"
+                  className="w-full rounded-lg border border-white/10 bg-slate-950/55 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+                />
+              </>
+            )}
+            {error && (
+              <p className="rounded-lg border border-rose-300/20 bg-rose-400/10 p-3 text-sm leading-6 text-rose-100">{error}</p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={onClose} disabled={isLoading} className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">
+                취소
+              </button>
+              <button type="submit" disabled={isLoading} className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">
+                {isLoading ? "확인 중..." : modal.mode === "set" ? "비밀번호 설정" : modal.mode === "unlock" ? "잠금 해제" : modal.mode === "change" ? "변경" : "잠금 제거"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NotesView({ notes, noteDraft, setNoteDraft, editingNoteId, setEditingNoteId, onSaveNote, onDeleteNote, onEditNote, onLockNote, unlockedNotes }) {
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <GlassCard className="xl:col-span-4">
@@ -3354,8 +3477,16 @@ function NotesView({ notes, noteDraft, setNoteDraft, editingNoteId, setEditingNo
                 <span className="truncate rounded-lg bg-violet-300/10 px-3 py-1 text-xs text-violet-200">{note.tag || "개인"}</span>
                 <div className="flex gap-2">
                   <IconButton
+                    label={note.isLocked ? "잠금 해제" : "메모 잠금"}
+                    onClick={() => onLockNote(note)}
+                  >
+                    {note.isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                  </IconButton>
+                  <IconButton
                     label={`${note.title} 수정`}
                     onClick={() => {
+                      onEditNote(note);
+                      return;
                       setEditingNoteId(note.id);
                       setNoteDraft({ title: note.title, body: note.body, tag: note.tag || "개인" });
                     }}
@@ -3368,7 +3499,21 @@ function NotesView({ notes, noteDraft, setNoteDraft, editingNoteId, setEditingNo
                 </div>
               </div>
               <h3 className="text-base font-semibold text-white">{note.title}</h3>
-              <p className="mt-3 flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-400">{note.body}</p>
+              {note.isLocked && !unlockedNotes[note.id] ? (
+                <button
+                  type="button"
+                  onClick={() => onLockNote(note)}
+                  className="mt-3 flex-1 rounded-lg border border-white/10 bg-white/[0.035] p-4 text-left transition hover:bg-white/[0.06]"
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium text-slate-200">
+                    <Lock className="h-4 w-4" />
+                    잠긴 메모입니다.
+                  </span>
+                  <span className="mt-2 block text-sm leading-6 text-slate-500">비밀번호를 입력하면 내용을 확인할 수 있습니다.</span>
+                </button>
+              ) : (
+                <p className="mt-3 flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-400">{note.body}</p>
+              )}
             </div>
           </GlassCard>
         ))}
@@ -3972,6 +4117,16 @@ export default function Home() {
   const [taskSaveMessage, setTaskSaveMessage] = useState("");
   const [noteDraft, setNoteDraft] = useState({ title: "", body: "", tag: "개인" });
   const [editingNoteId, setEditingNoteId] = useState(null);
+  const [unlockedNotes, setUnlockedNotes] = useState({});
+  const [noteSecurityModal, setNoteSecurityModal] = useState(null);
+  const [noteSecurityValues, setNoteSecurityValues] = useState({
+    password: "",
+    confirmPassword: "",
+    currentPassword: "",
+    newPassword: "",
+  });
+  const [noteSecurityStatus, setNoteSecurityStatus] = useState("idle");
+  const [noteSecurityError, setNoteSecurityError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -4143,6 +4298,7 @@ export default function Home() {
         if (!isActive) return;
         setTasks(normalizeTasks(remoteTasks));
         setNotes(remoteNotes);
+        setUnlockedNotes({});
         setWorkspaceStorageMode("supabase");
         setWorkspaceStorageErrorCode("");
         window.localStorage.removeItem(TASKS_KEY);
@@ -4377,10 +4533,13 @@ export default function Home() {
       ...notes.map((note) => ({
         id: `note-${note.id}`,
         title: note.title,
-        helper: note.body,
+        helper: note.isLocked && !unlockedNotes[note.id] ? "잠긴 메모입니다." : note.body,
         type: "메모",
+        isLocked: note.isLocked,
         view: "Notes",
-        searchText: `${note.title} ${note.body} ${note.tag || ""}`,
+        searchText: note.isLocked && !unlockedNotes[note.id]
+          ? `${note.title} ${note.tag || ""}`
+          : `${note.title} ${note.body || ""} ${note.tag || ""}`,
       })),
       ...searchableCalendarEvents.map((event) => ({
         id: `event-${event.id}`,
@@ -4403,7 +4562,7 @@ export default function Home() {
     ];
 
     return items.filter((item) => matchesSearchQuery(item.searchText, query));
-  }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, notes, searchQuery, tasks]);
+  }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, notes, searchQuery, tasks, unlockedNotes]);
 
   const notifications = useMemo(() => {
     const remainingTasks = tasks.filter((task) => !task.completed).length;
@@ -4475,6 +4634,7 @@ export default function Home() {
 
     setTasks(normalizeTasks(remoteTasks));
     setNotes(remoteNotes);
+    setUnlockedNotes({});
     setWorkspaceStorageMode("supabase");
     setWorkspaceStorageErrorCode("");
     window.localStorage.removeItem(TASKS_KEY);
@@ -4734,6 +4894,178 @@ export default function Home() {
     }
   }
 
+  function resetNoteSecurityModal() {
+    setNoteSecurityModal(null);
+    setNoteSecurityValues({
+      password: "",
+      confirmPassword: "",
+      currentPassword: "",
+      newPassword: "",
+    });
+    setNoteSecurityError("");
+    setNoteSecurityStatus("idle");
+  }
+
+  function openNoteSecurityModal(mode, note, action = "view") {
+    setNoteSecurityModal({ mode, note, action });
+    setNoteSecurityValues({
+      password: "",
+      confirmPassword: "",
+      currentPassword: "",
+      newPassword: "",
+    });
+    setNoteSecurityError("");
+    setNoteSecurityStatus("idle");
+  }
+
+  function getNoteUnlockToken(noteId) {
+    return unlockedNotes[noteId]?.token || null;
+  }
+
+  function relockNoteInSession(noteId) {
+    setUnlockedNotes((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
+    setNotes((currentNotes) =>
+      currentNotes.map((note) =>
+        note.id === noteId && note.isLocked ? { ...note, body: null, content: null } : note,
+      ),
+    );
+  }
+
+  function editNote(note) {
+    if (note.isLocked && !getNoteUnlockToken(note.id)) {
+      openNoteSecurityModal("unlock", note, "edit");
+      return;
+    }
+
+    setEditingNoteId(note.id);
+    setNoteDraft({ title: note.title, body: note.body || "", tag: note.tag || "개인" });
+  }
+
+  function requestNoteLockAction(note) {
+    if (workspaceStorageMode !== "supabase" || String(note.id).startsWith("local-")) {
+      window.alert("로그인 후 Supabase에 저장된 메모만 잠금 기능을 사용할 수 있습니다.");
+      return;
+    }
+
+    if (!note.isLocked) {
+      openNoteSecurityModal("set", note);
+      return;
+    }
+
+    if (getNoteUnlockToken(note.id)) {
+      openNoteSecurityModal("actions", note);
+      return;
+    }
+
+    openNoteSecurityModal("unlock", note, "view");
+  }
+
+  function handleNoteSecurityAction(action) {
+    if (!noteSecurityModal?.note) return;
+
+    if (action === "lockNow") {
+      relockNoteInSession(noteSecurityModal.note.id);
+      resetNoteSecurityModal();
+      return;
+    }
+
+    openNoteSecurityModal(action, noteSecurityModal.note);
+  }
+
+  async function submitNoteSecurity(event) {
+    event.preventDefault();
+    if (!noteSecurityModal?.note || noteSecurityStatus === "loading") return;
+
+    const { mode, note, action } = noteSecurityModal;
+    const password = noteSecurityValues.password;
+    const currentPassword = noteSecurityValues.currentPassword;
+    const newPassword = noteSecurityValues.newPassword;
+    const targetPassword = mode === "change" ? newPassword : password;
+
+    if ((mode === "set" || mode === "change") && targetPassword.length < 6) {
+      setNoteSecurityError("비밀번호는 6자리 이상이어야 합니다.");
+      return;
+    }
+
+    if (mode === "set" && password !== noteSecurityValues.confirmPassword) {
+      setNoteSecurityError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    if (mode === "change" && newPassword !== noteSecurityValues.confirmPassword) {
+      setNoteSecurityError("새 비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setNoteSecurityStatus("loading");
+    setNoteSecurityError("");
+
+    try {
+      if (mode === "set") {
+        const lockedNote = await lockNoteInSupabase(note.id, password);
+        setNotes((currentNotes) =>
+          currentNotes.map((currentNote) =>
+            currentNote.id === note.id ? { ...currentNote, ...lockedNote, body: null, content: null, isLocked: true } : currentNote,
+          ),
+        );
+        setUnlockedNotes((current) => {
+          const next = { ...current };
+          delete next[note.id];
+          return next;
+        });
+      }
+
+      if (mode === "unlock") {
+        const data = await unlockNoteInSupabase(note.id, password);
+        setUnlockedNotes((current) => ({
+          ...current,
+          [note.id]: { token: data.unlockToken },
+        }));
+        setNotes((currentNotes) =>
+          currentNotes.map((currentNote) =>
+            currentNote.id === note.id ? { ...currentNote, ...data.note, body: data.note.body || data.note.content || "" } : currentNote,
+          ),
+        );
+
+        const unlockedNote = { ...note, ...data.note, body: data.note.body || data.note.content || "" };
+        if (action === "edit") {
+          setEditingNoteId(note.id);
+          setNoteDraft({ title: unlockedNote.title, body: unlockedNote.body, tag: unlockedNote.tag || "개인" });
+        }
+        if (action === "delete") {
+          await deleteNote(note.id, data.unlockToken);
+        }
+      }
+
+      if (mode === "change") {
+        await changeNotePasswordInSupabase(note.id, currentPassword, newPassword);
+      }
+
+      if (mode === "remove") {
+        const unlockedNote = await removeNoteLockInSupabase(note.id, currentPassword);
+        setNotes((currentNotes) =>
+          currentNotes.map((currentNote) =>
+            currentNote.id === note.id ? { ...currentNote, ...unlockedNote, isLocked: false } : currentNote,
+          ),
+        );
+        setUnlockedNotes((current) => {
+          const next = { ...current };
+          delete next[note.id];
+          return next;
+        });
+      }
+
+      resetNoteSecurityModal();
+    } catch (error) {
+      setNoteSecurityStatus("idle");
+      setNoteSecurityError(getNoteSecurityMessage(error));
+    }
+  }
+
   async function saveNote(event) {
     event.preventDefault();
     const title = noteDraft.title.trim();
@@ -4743,6 +5075,7 @@ export default function Home() {
 
     if (editingNoteId) {
       const updatedNote = { id: editingNoteId, title, body, tag };
+      const unlockToken = getNoteUnlockToken(editingNoteId);
       setNotes((currentNotes) =>
         currentNotes.map((note) =>
           note.id === editingNoteId ? { ...note, title, body, tag } : note,
@@ -4750,7 +5083,10 @@ export default function Home() {
       );
       if (workspaceStorageMode === "supabase" && userEmail && !String(editingNoteId).startsWith("local-")) {
         try {
-          await updateNoteInSupabase(userEmail, updatedNote);
+          const savedNote = await updateNoteInSupabase(userEmail, updatedNote, unlockToken);
+          setNotes((currentNotes) =>
+            currentNotes.map((note) => (note.id === editingNoteId ? { ...note, ...savedNote } : note)),
+          );
           await refreshWorkspaceFromSupabase();
         } catch (error) {
           console.warn("Supabase note update failed, keeping localStorage fallback:", {
@@ -4793,11 +5129,18 @@ export default function Home() {
     }
   }
 
-  async function deleteNote(noteId) {
+  async function deleteNote(noteId, unlockTokenOverride = null) {
+    const targetNote = notes.find((note) => note.id === noteId);
+    const unlockToken = unlockTokenOverride || getNoteUnlockToken(noteId);
+    if (targetNote?.isLocked && !unlockToken) {
+      openNoteSecurityModal("unlock", targetNote, "delete");
+      return;
+    }
+
     setNotes((currentNotes) => currentNotes.filter((note) => note.id !== noteId));
     if (workspaceStorageMode === "supabase" && userEmail && !String(noteId).startsWith("local-")) {
       try {
-        await deleteNoteFromSupabase(userEmail, noteId);
+        await deleteNoteFromSupabase(userEmail, noteId, unlockToken);
         await refreshWorkspaceFromSupabase();
       } catch (error) {
         console.warn("Supabase note delete failed, keeping localStorage fallback:", {
@@ -4813,6 +5156,11 @@ export default function Home() {
       setEditingNoteId(null);
       setNoteDraft({ title: "", body: "", tag: "개인" });
     }
+    setUnlockedNotes((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
   }
 
   async function confirmDriveFileDelete() {
@@ -4927,6 +5275,9 @@ export default function Home() {
         setEditingNoteId={setEditingNoteId}
         onSaveNote={saveNote}
         onDeleteNote={deleteNote}
+        onEditNote={editNote}
+        onLockNote={requestNoteLockAction}
+        unlockedNotes={unlockedNotes}
       />
     ),
     Tasks: (
@@ -5168,6 +5519,16 @@ export default function Home() {
         onTaskCreated={createTaskFromTitle}
         onNoteCreated={createNoteFromDraft}
         onOpenFullAssistant={() => setActiveView("AI Assistant")}
+      />
+      <NoteSecurityModal
+        modal={noteSecurityModal}
+        values={noteSecurityValues}
+        setValues={setNoteSecurityValues}
+        error={noteSecurityError}
+        status={noteSecurityStatus}
+        onClose={resetNoteSecurityModal}
+        onSubmit={submitNoteSecurity}
+        onAction={handleNoteSecurityAction}
       />
       {driveFileToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
