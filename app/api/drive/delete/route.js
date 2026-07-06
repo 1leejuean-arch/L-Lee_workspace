@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
 async function readGoogleError(response) {
   const contentType = response.headers.get("content-type") || "";
@@ -42,7 +43,7 @@ export async function POST(request) {
       return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
-    if (!session?.accessToken) {
+    if (!session?.accessToken && session.authError) {
       return Response.json({ error: "Google Drive 권한이 필요합니다. 다시 로그인해주세요." }, { status: 401 });
     }
 
@@ -60,13 +61,15 @@ export async function POST(request) {
     }
 
     const params = new URLSearchParams({ supportsAllDrives: "true" });
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`, {
+    const googleResult = await fetchGoogleApi(request, session, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`, {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
       cache: "no-store",
     });
+    if (googleResult.error) {
+      return Response.json({ error: googleResult.message || "Google 권한을 다시 연결해주세요." }, { status: googleResult.status || 401 });
+    }
+
+    const response = googleResult.response;
 
     if (!response.ok) {
       const googleError = await readGoogleError(response);

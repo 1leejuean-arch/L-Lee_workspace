@@ -1225,6 +1225,20 @@ function IconButton({ label, onClick, children, tone = "default", disabled = fal
 function GoogleAccountPanel({ session, status, compact = false, onLogout }) {
   const isConnected = status === "authenticated";
   const user = session?.user;
+  const needsReconnect = isConnected && session?.authError === "RefreshAccessTokenError";
+
+  function connectGoogle() {
+    if (needsReconnect) {
+      signIn("google", undefined, {
+        prompt: "consent",
+        access_type: "offline",
+        include_granted_scopes: "true",
+      });
+      return;
+    }
+
+    signIn("google");
+  }
 
   return (
     <div className="rounded-lg border border-cyan-300/20 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-4">
@@ -1253,14 +1267,14 @@ function GoogleAccountPanel({ session, status, compact = false, onLogout }) {
 
         <button
           type="button"
-          onClick={() => (isConnected ? onLogout?.() : signIn("google"))}
+          onClick={() => (isConnected && !needsReconnect ? onLogout?.() : connectGoogle())}
           className={`flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition ${
-            isConnected
+            isConnected && !needsReconnect
               ? "border border-white/10 bg-white/[0.045] text-slate-200 hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100"
               : "bg-cyan-300 text-slate-950 hover:bg-cyan-200"
           } ${compact ? "sm:px-3 sm:py-2.5" : ""}`}
         >
-          {isConnected ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+          {isConnected && !needsReconnect ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
           {isConnected ? "로그아웃" : "Google 계정 연결하기"}
         </button>
       </div>
@@ -1950,6 +1964,14 @@ function CalendarStatusNotice({ status, calendarStatus }) {
     return <p className="px-5 pb-5 text-sm text-slate-500">Google Calendar 일정을 불러오는 중입니다...</p>;
   }
 
+  if (calendarStatus === "reauth") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-50">
+        Google 권한을 다시 연결해주세요. 캘린더 외 다른 기능은 계속 사용할 수 있습니다.
+      </div>
+    );
+  }
+
   if (calendarStatus === "fallback") {
     return (
       <div className="mx-5 mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-50">
@@ -1972,6 +1994,14 @@ function DriveStatusNotice({ status, driveStatus }) {
 
   if (driveStatus === "loading") {
     return <p className="px-5 pb-5 text-sm text-slate-500">Google Drive 파일을 불러오는 중입니다...</p>;
+  }
+
+  if (driveStatus === "reauth") {
+    return (
+      <div className="mx-5 mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-50">
+        Google 권한을 다시 연결해주세요. 드라이브 외 다른 기능은 계속 사용할 수 있습니다.
+      </div>
+    );
   }
 
   if (driveStatus === "fallback") {

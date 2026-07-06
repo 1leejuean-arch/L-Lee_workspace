@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
 function getFileExtension(name = "") {
   const match = name.toLowerCase().match(/\.([^.]+)$/);
@@ -72,11 +73,11 @@ async function readGoogleError(response) {
   return (await response.text().catch(() => "")) || "Google Drive API error";
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
@@ -97,12 +98,14 @@ export async function GET() {
       });
       if (nextPageToken) params.set("pageToken", nextPageToken);
 
-      const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-        },
+      const googleResult = await fetchGoogleApi(request, session, `https://www.googleapis.com/drive/v3/files?${params}`, {
         cache: "no-store",
       });
+      if (googleResult.error) {
+        return NextResponse.json({ error: googleResult.message || "Google 권한을 다시 연결해주세요." }, { status: googleResult.status || 401 });
+      }
+
+      const response = googleResult.response;
 
       if (!response.ok) {
         const details = await readGoogleError(response);

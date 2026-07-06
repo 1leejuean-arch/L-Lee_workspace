@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
 const KOREA_TIME_ZONE = "Asia/Seoul";
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -157,7 +158,7 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
@@ -171,12 +172,14 @@ export async function GET(request) {
       maxResults: "2500",
     });
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
+    const googleResult = await fetchGoogleApi(request, session, `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
       cache: "no-store",
     });
+    if (googleResult.error) {
+      return NextResponse.json({ error: googleResult.message || "Google 권한을 다시 연결해주세요." }, { status: googleResult.status || 401 });
+    }
+
+    const response = googleResult.response;
 
     if (!response.ok) {
       const details = await readGoogleError(response);

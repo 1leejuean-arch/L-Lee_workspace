@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
 function buildDateTime(date, time) {
   return `${date}T${time}:00`;
@@ -29,7 +30,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
     }
 
-    if (!session.accessToken) {
+    if (!session.accessToken && session.authError) {
       return NextResponse.json({ error: "캘린더 권한이 만료되었습니다. 다시 로그인해주세요." }, { status: 401 });
     }
 
@@ -53,10 +54,9 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "종료 시간은 시작 시간보다 늦어야 합니다." }, { status: 400 });
     }
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+    const googleResult = await fetchGoogleApi(request, session, `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
       method: "PATCH",
       headers: {
-        Authorization: `Bearer ${session.accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -73,6 +73,11 @@ export async function PATCH(request) {
         },
       }),
     });
+    if (googleResult.error) {
+      return NextResponse.json({ error: googleResult.message || "Google 권한을 다시 연결해주세요." }, { status: googleResult.status || 401 });
+    }
+
+    const response = googleResult.response;
 
     if (!response.ok) {
       const details = await readGoogleError(response);
