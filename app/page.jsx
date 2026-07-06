@@ -1088,6 +1088,10 @@ function matchesSearchQuery(searchText, query) {
   return tokens.some((token) => normalizedSearchText.includes(token));
 }
 
+function isNoteLocked(note) {
+  return Boolean(note?.isLocked ?? note?.is_locked);
+}
+
 function uniqueById(items) {
   const seenIds = new Set();
   return items.filter((item) => {
@@ -2375,7 +2379,7 @@ function WeatherView({ weather, weatherStatus, weatherError }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather, onOpenNotes }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const [dashboardDrivePage, setDashboardDrivePage] = useState(1);
@@ -2519,16 +2523,45 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
         <TaskList tasks={tasks.slice(0, 5)} onToggle={toggleTask} />
       </GlassCard>
 
-      <GlassCard className="xl:col-span-4">
+      <GlassCard className="xl:col-span-8">
         <CardHeader icon={FileText} title="빠른 메모" />
-        <div className="space-y-3 p-5">
-          {notes.slice(0, 3).map((note) => (
-            <article key={note.id} className="rounded-lg border border-white/10 bg-slate-950/35 p-3">
-              <p className="text-sm font-medium text-slate-100">{note.title}</p>
-              <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-400">{note.body}</p>
-            </article>
-          ))}
-          {notes.length === 0 && <p className="text-sm text-slate-500">아직 메모가 없습니다.</p>}
+        <div className="grid gap-3 p-5 sm:grid-cols-2 2xl:grid-cols-3">
+          {notes.slice(0, 6).map((note) => {
+            const locked = isNoteLocked(note);
+            const preview = locked ? "" : String(note.body ?? note.content ?? "");
+
+            return (
+              <button key={note.id} type="button" onClick={onOpenNotes} className="min-h-36 w-full rounded-lg border border-white/10 bg-slate-950/35 p-3 text-left transition hover:bg-white/[0.06]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-medium leading-6 text-slate-100">{note.title}</p>
+                    {note.tag && <p className="mt-1 truncate text-xs text-slate-500">{note.tag}</p>}
+                  </div>
+                  {locked && <Lock className="h-4 w-4 shrink-0 text-cyan-200" />}
+                </div>
+                {locked ? (
+                  <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] p-3">
+                    <p className="text-sm font-medium text-slate-200">잠긴 메모입니다.</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">메모 페이지에서 비밀번호를 입력해 확인할 수 있습니다.</p>
+                  </div>
+                ) : (
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-400">{preview}</p>
+                )}
+              </button>
+            );
+          })}
+          {notes.length > 6 && (
+            <div className="col-span-full flex justify-end border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={onOpenNotes}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 hover:text-white"
+              >
+                전체 메모 보기
+              </button>
+            </div>
+          )}
+          {notes.length === 0 && <p className="col-span-full text-sm text-slate-500">아직 메모가 없습니다.</p>}
         </div>
       </GlassCard>
 
@@ -5264,6 +5297,7 @@ export default function Home() {
         weatherStatus={weatherStatus}
         weatherError={weatherError}
         onOpenWeather={() => setActiveView("Weather")}
+        onOpenNotes={() => setActiveView("Notes")}
       />
     ),
     Calendar: (
