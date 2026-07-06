@@ -1673,7 +1673,7 @@ function PriorityBadge({ priority }) {
   const normalizedPriority = normalizePriority(priority);
 
   return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${priorityBadgeStyles[normalizedPriority]}`}>
+    <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${priorityBadgeStyles[normalizedPriority]}`}>
       {normalizedPriority}
     </span>
   );
@@ -1687,17 +1687,17 @@ function TaskList({ tasks, onToggle, onDelete, detailed = false }) {
   return (
     <div className="space-y-2 p-5">
       {tasks.map((task) => (
-        <div key={task.id} className="flex items-center gap-3 rounded-lg p-3 transition hover:bg-white/[0.05]">
-          <button type="button" onClick={() => onToggle(task.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div key={task.id} className="flex items-start gap-3 rounded-lg p-3 transition hover:bg-white/[0.05]">
+          <button type="button" onClick={() => onToggle(task.id)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
             <span
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
                 task.completed ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-slate-600 text-transparent"
               }`}
             >
               <Check className="h-3.5 w-3.5" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className={`block truncate text-sm ${task.completed ? "text-slate-500 line-through" : "text-slate-100"}`}>
+              <span className={`block text-sm leading-6 [overflow-wrap:anywhere] [word-break:break-word] ${task.completed ? "text-slate-500 line-through" : "text-slate-100"}`}>
                 {task.title}
               </span>
               {detailed && <span className="mt-1 block text-xs text-slate-500">우선순위 {task.priority}</span>}
@@ -1835,7 +1835,7 @@ function ProjectTaskList({
               isActive ? "border-cyan-300/40 bg-cyan-300/[0.07] shadow-lg shadow-cyan-500/10" : "border-white/10 bg-white/[0.035]"
             }`}
           >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="flex flex-wrap items-start gap-3">
               <button type="button" onClick={() => onToggleTask(task.id)} className="mt-0.5 shrink-0">
                 <span
                   className={`flex h-5 w-5 items-center justify-center rounded border ${
@@ -1846,8 +1846,8 @@ function ProjectTaskList({
                 </span>
               </button>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className={`min-w-0 text-sm font-semibold ${task.completed ? "text-slate-500 line-through" : "text-white"}`}>
+                <div className="flex min-w-0 flex-wrap items-start gap-2">
+                  <h3 className={`min-w-0 max-w-full flex-[1_1_100%] text-sm font-semibold leading-6 [overflow-wrap:anywhere] [word-break:break-word] sm:flex-[1_1_auto] ${task.completed ? "text-slate-500 line-through" : "text-white"}`}>
                     {task.title}
                   </h3>
                   <PriorityBadge priority={task.priority} />
@@ -1856,21 +1856,21 @@ function ProjectTaskList({
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                   <span>세부 단계 {completedSteps}/{steps.length}</span>
                   <span>{stepProgress}% 완료</span>
-                  <select
-                    value={task.priority}
-                    onChange={(event) => onUpdateTaskPriority(task.id, event.target.value)}
-                    className="rounded-md border border-white/10 bg-slate-950/80 px-2 py-1 text-xs text-slate-200 outline-none"
-                  >
-                    {taskPriorityOptions.map((priority) => (
-                      <option key={priority} value={priority}>{priority}</option>
-                    ))}
-                  </select>
                 </div>
                 <div className="mt-3 h-1.5 rounded-full bg-slate-800">
                   <div className="h-1.5 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: `${stepProgress}%` }} />
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 self-end sm:self-start">
+                <select
+                  value={task.priority}
+                  onChange={(event) => onUpdateTaskPriority(task.id, event.target.value)}
+                  className="rounded-md border border-white/10 bg-slate-950/80 px-2 py-1 text-xs text-slate-200 outline-none"
+                >
+                  {taskPriorityOptions.map((priority) => (
+                    <option key={priority} value={priority}>{priority}</option>
+                  ))}
+                </select>
                 <IconButton label={`${task.title} 펼치기`} onClick={() => onToggleExpanded(task.id)}>
                   {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </IconButton>
@@ -1886,15 +1886,15 @@ function ProjectTaskList({
                   {steps.length === 0 && <p className="rounded-lg bg-white/[0.03] p-3 text-sm text-slate-500">아직 세부 단계가 없습니다.</p>}
                   {steps.map((step, index) => (
                     <div key={step.id} className="flex flex-col gap-3 rounded-lg bg-slate-950/35 p-3 sm:flex-row sm:items-center">
-                      <button type="button" onClick={() => onToggleStep(task.id, step.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <button type="button" onClick={() => onToggleStep(task.id, step.id)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                         <span
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
                             step.completed ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-slate-600 text-transparent"
                           }`}
                         >
                           <Check className="h-3.5 w-3.5" />
                         </span>
-                        <span className={`truncate text-sm ${step.completed ? "text-slate-500 line-through" : "text-slate-100"}`}>
+                        <span className={`min-w-0 flex-1 text-sm leading-6 [overflow-wrap:anywhere] [word-break:break-word] ${step.completed ? "text-slate-500 line-through" : "text-slate-100"}`}>
                           {step.title}
                         </span>
                       </button>
@@ -3634,7 +3634,7 @@ function TasksView({
                   activeSteps.slice(0, 5).map((step) => (
                     <div key={step.id} className="flex items-center gap-2 rounded-lg bg-white/[0.035] px-3 py-2 text-sm text-slate-300">
                       <span className={`h-2 w-2 shrink-0 rounded-full ${step.completed ? "bg-cyan-300" : "bg-slate-600"}`} />
-                      <span className={`min-w-0 flex-1 truncate ${step.completed ? "text-slate-500 line-through" : ""}`}>{step.title}</span>
+                      <span className={`min-w-0 flex-1 [overflow-wrap:anywhere] [word-break:break-word] ${step.completed ? "text-slate-500 line-through" : ""}`}>{step.title}</span>
                       <PriorityBadge priority={step.priority} />
                     </div>
                   ))
