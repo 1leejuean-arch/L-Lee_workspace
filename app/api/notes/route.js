@@ -153,9 +153,12 @@ export async function PATCH(request) {
     if (!isUnlocked) return jsonError("NOTE_UNLOCK_REQUIRED", 403);
 
     const content = body.content || "";
+    const encryptedNoteContent = existingNote.is_locked ? encryptNoteContent(content) : null;
     const secureContent = existingNote.is_locked
       ? {
-          ...encryptNoteContent(content),
+          encrypted_content: encryptedNoteContent.encryptedContent,
+          encryption_iv: encryptedNoteContent.encryptionIv,
+          encryption_tag: encryptedNoteContent.encryptionTag,
           content: null,
         }
       : { content };
