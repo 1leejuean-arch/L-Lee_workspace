@@ -5247,7 +5247,7 @@ export default function Home() {
         throw new Error(getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
       }
 
-      if (!data?.ok || data?.deletedFileId !== driveFileToDelete.id) {
+      if (!data?.ok || data?.deletedFileId !== driveFileToDelete.id || data?.trashed !== true) {
         throw new Error("파일 삭제 응답을 확인하지 못했습니다.");
       }
 
@@ -5256,7 +5256,8 @@ export default function Home() {
       window.localStorage.setItem(DRIVE_FILES_KEY, JSON.stringify(nextFiles));
       setDriveFileToDelete(null);
       setDriveDeleteMessageType("success");
-      setDriveDeleteMessage("파일을 삭제했어요.");
+      setDriveDeleteMessage("파일을 Google Drive 휴지통으로 이동했어요.");
+      setDriveRefreshNonce((nonce) => nonce + 1);
     } catch (error) {
       setDriveDeleteMessageType("error");
       setDriveDeleteMessage(error.message || "파일을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");

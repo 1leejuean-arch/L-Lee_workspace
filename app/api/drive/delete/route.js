@@ -2,7 +2,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
 import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
-const DRIVE_PERMISSION_MESSAGE = "Google Drive 권한이 부족합니다. 설정에서 Google 계정을 다시 연결해주세요.";
+const GOOGLE_RECONNECT_MESSAGE = "Google 권한을 다시 연결해주세요.";
+const DRIVE_SCOPE_MESSAGE = "Google Drive 삭제 권한이 부족합니다. Google 계정을 다시 연결해주세요.";
+const FILE_PERMISSION_MESSAGE = "이 파일을 삭제할 권한이 없습니다. 내 드라이브의 소유 파일인지 확인해주세요.";
 
 async function readGoogleError(response) {
   const contentType = response.headers.get("content-type") || "";
@@ -10,25 +12,39 @@ async function readGoogleError(response) {
   if (contentType.includes("application/json")) {
     try {
       const data = await response.json();
+      const detailReason = Array.isArray(data.error?.details)
+        ? data.error.details.find((detail) => typeof detail?.reason === "string")?.reason
+        : "";
       return {
-        message: data.error?.message || data.error || data.message || "Google Drive API error",
-        reason: data.error?.errors?.[0]?.reason || data.error?.status || "",
+        code: data.error?.code || response.status,
+        message:
+          (typeof data.error?.message === "string" && data.error.message) ||
+          (typeof data.message === "string" && data.message) ||
+          "Google Drive API error",
+        reason: data.error?.errors?.[0]?.reason || detailReason || "",
       };
     } catch {
-      return { message: "Google Drive API error", reason: "" };
+      return { code: response.status, message: "Google Drive API error", reason: "" };
     }
   }
 
   return {
+    code: response.status,
     message: (await response.text().catch(() => "")) || "Google Drive API error",
     reason: "",
   };
 }
 
 function getDriveDeleteMessage(status, googleError) {
-  if (status === 401 || status === 403) return DRIVE_PERMISSION_MESSAGE;
+  if (status === 401) return GOOGLE_RECONNECT_MESSAGE;
+  if (status === 403) {
+    if (["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"].includes(googleError?.reason)) {
+      return DRIVE_SCOPE_MESSAGE;
+    }
+    return FILE_PERMISSION_MESSAGE;
+  }
   if (status === 404) return "삭제할 파일을 찾지 못했습니다.";
-  return googleError?.message || "파일을 삭제하지 못했습니다.";
+  return "Google Drive 파일을 휴지통으로 이동하지 못했습니다.";
 }
 
 export async function POST(request) {
@@ -36,11 +52,11 @@ export async function POST(request) {
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
-      return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
+      return Response.json({ error: GOOGLE_RECONNECT_MESSAGE }, { status: 401 });
     }
 
     if (!session?.accessToken && session.authError) {
-      return Response.json({ error: DRIVE_PERMISSION_MESSAGE }, { status: 401 });
+      return Response.json({ error: GOOGLE_RECONNECT_MESSAGE }, { status: 401 });
     }
 
     let body = {};
@@ -56,15 +72,24 @@ export async function POST(request) {
       return Response.json({ error: "삭제할 파일 ID가 필요합니다." }, { status: 400 });
     }
 
-    const params = new URLSearchParams({ supportsAllDrives: "true" });
+    console.info("[drive-trash] authorization", {
+      scope: session.scope || "not-available-in-session",
+      hasRefreshToken: Boolean(session.hasRefreshToken),
+    });
+
+    const params = new URLSearchParams({ supportsAllDrives: "true", fields: "id,trashed" });
     const googleResult = await fetchGoogleApi(request, session, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`, {
-      method: "DELETE",
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trashed: true }),
       cache: "no-store",
     });
     if (googleResult.error) {
       const status = googleResult.status || 401;
       return Response.json(
-        { error: status === 401 || status === 403 ? DRIVE_PERMISSION_MESSAGE : googleResult.message || "Google Drive 파일을 삭제하지 못했습니다." },
+        { error: status === 401 ? GOOGLE_RECONNECT_MESSAGE : googleResult.message || "Google Drive 파일을 휴지통으로 이동하지 못했습니다." },
         { status },
       );
     }
@@ -73,20 +98,36 @@ export async function POST(request) {
 
     if (!response.ok) {
       const googleError = await readGoogleError(response);
+      console.error("[drive-trash] Google API request failed", {
+        status: response.status,
+        code: googleError.code,
+        message: googleError.message,
+        reason: googleError.reason,
+      });
       return Response.json(
         {
           error: getDriveDeleteMessage(response.status, googleError),
-          details: googleError.message,
           reason: googleError.reason,
         },
         { status: response.status },
       );
     }
 
-    return Response.json({ ok: true, deletedFileId: fileId });
+    const updatedFile = await response.json().catch(() => ({}));
+    if (updatedFile.trashed !== true) {
+      console.error("[drive-trash] Google API returned an unexpected response", {
+        status: response.status,
+        code: "UNEXPECTED_RESPONSE",
+        message: "The updated file was not marked as trashed.",
+        reason: "trashedFieldNotTrue",
+      });
+      return Response.json({ error: "Google Drive 파일을 휴지통으로 이동하지 못했습니다." }, { status: 502 });
+    }
+
+    return Response.json({ ok: true, deletedFileId: fileId, trashed: updatedFile.trashed === true });
   } catch (error) {
     console.error("Drive delete failed:", error);
-    return Response.json({ error: "파일을 삭제하지 못했습니다." }, { status: 500 });
+    return Response.json({ error: "Google Drive 파일을 휴지통으로 이동하지 못했습니다." }, { status: 500 });
   }
 }
 

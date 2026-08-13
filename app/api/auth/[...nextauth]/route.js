@@ -39,9 +39,13 @@ export const authOptions = {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token ?? token.refreshToken;
         token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : undefined;
-        token.scope = account.scope || GOOGLE_AUTH_SCOPE;
+        token.scope = account.scope || token.scope || "";
         token.error = undefined;
         token.authError = undefined;
+        console.info("[google-auth] OAuth grant received", {
+          scope: token.scope || "not-returned-by-google",
+          hasRefreshToken: Boolean(token.refreshToken),
+        });
         return token;
       }
 
