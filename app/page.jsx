@@ -5227,9 +5227,16 @@ export default function Home() {
   }
 
   async function confirmDriveFileDelete() {
-    if (!driveFileToDelete?.id) return;
+    const fileId = typeof driveFileToDelete?.id === "string" ? driveFileToDelete.id.trim() : "";
+    const fileName = typeof driveFileToDelete?.name === "string" ? driveFileToDelete.name.trim() : "";
 
-    setDeletingDriveFileId(driveFileToDelete.id);
+    if (!fileId) {
+      setDriveDeleteMessageType("error");
+      setDriveDeleteMessage("삭제할 파일 정보가 올바르지 않습니다. 목록을 새로고침해주세요.");
+      return;
+    }
+
+    setDeletingDriveFileId(fileId);
     setDriveDeleteMessage("");
     setDriveDeleteMessageType("error");
 
@@ -5239,7 +5246,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ fileId: driveFileToDelete.id }),
+        body: JSON.stringify({ fileId, name: fileName }),
       });
       const { data, text } = await readApiResponse(response);
 
@@ -5247,11 +5254,11 @@ export default function Home() {
         throw new Error(getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
       }
 
-      if (!data?.ok || data?.deletedFileId !== driveFileToDelete.id || data?.trashed !== true) {
+      if (!data?.ok || data?.deletedFileId !== fileId || data?.trashed !== true) {
         throw new Error("파일 삭제 응답을 확인하지 못했습니다.");
       }
 
-      const nextFiles = driveFilesData.filter((file) => file.id !== driveFileToDelete.id);
+      const nextFiles = driveFilesData.filter((file) => file.id !== fileId);
       setDriveFilesData(nextFiles);
       window.localStorage.setItem(DRIVE_FILES_KEY, JSON.stringify(nextFiles));
       setDriveFileToDelete(null);
