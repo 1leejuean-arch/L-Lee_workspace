@@ -2,6 +2,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
 import { fetchGoogleApi } from "../../../../lib/googleApiServer";
 
+const DRIVE_PERMISSION_MESSAGE = "Google Drive 권한이 부족합니다. 설정에서 Google 계정을 다시 연결해주세요.";
+
 async function readGoogleError(response) {
   const contentType = response.headers.get("content-type") || "";
 
@@ -24,13 +26,7 @@ async function readGoogleError(response) {
 }
 
 function getDriveDeleteMessage(status, googleError) {
-  if (status === 401) return "Google Drive 권한이 필요합니다. 다시 로그인해주세요.";
-  if (status === 403) {
-    if (googleError?.reason === "insufficientPermissions") {
-      return "Google Drive 삭제 권한이 부족합니다. 로그아웃 후 다시 로그인해주세요.";
-    }
-    return "삭제 권한이 없는 파일입니다. Google Drive 권한을 확인하거나 다시 로그인해주세요.";
-  }
+  if (status === 401 || status === 403) return DRIVE_PERMISSION_MESSAGE;
   if (status === 404) return "삭제할 파일을 찾지 못했습니다.";
   return googleError?.message || "파일을 삭제하지 못했습니다.";
 }
@@ -44,7 +40,7 @@ export async function POST(request) {
     }
 
     if (!session?.accessToken && session.authError) {
-      return Response.json({ error: "Google Drive 권한이 필요합니다. 다시 로그인해주세요." }, { status: 401 });
+      return Response.json({ error: DRIVE_PERMISSION_MESSAGE }, { status: 401 });
     }
 
     let body = {};
@@ -66,7 +62,11 @@ export async function POST(request) {
       cache: "no-store",
     });
     if (googleResult.error) {
-      return Response.json({ error: googleResult.message || "Google 권한을 다시 연결해주세요." }, { status: googleResult.status || 401 });
+      const status = googleResult.status || 401;
+      return Response.json(
+        { error: status === 401 || status === 403 ? DRIVE_PERMISSION_MESSAGE : googleResult.message || "Google Drive 파일을 삭제하지 못했습니다." },
+        { status },
+      );
     }
 
     const response = googleResult.response;
