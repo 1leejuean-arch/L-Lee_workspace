@@ -1207,7 +1207,7 @@ function CardHeader({ icon: Icon, title, action = true, actionContent = null }) 
   );
 }
 
-function IconButton({ label, onClick, children, tone = "default", disabled = false }) {
+function IconButton({ label, onClick, children, tone = "default", disabled = false, title }) {
   const tones = {
     default: "text-slate-400 hover:border-cyan-300/30 hover:bg-white/10 hover:text-white",
     danger: "text-slate-500 hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-200",
@@ -1217,6 +1217,7 @@ function IconButton({ label, onClick, children, tone = "default", disabled = fal
     <button
       type="button"
       aria-label={label}
+      title={title || label}
       onClick={onClick}
       disabled={disabled}
       className={`rounded-lg border border-white/10 p-2 transition disabled:cursor-not-allowed disabled:opacity-40 ${tones[tone]}`}
@@ -1614,6 +1615,7 @@ function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "�
       {files.map((file) => {
         const Icon = getFileIcon(file);
         const categoryLabel = getDriveCategoryLabel(file);
+        const canRemoveFromDrive = file.canTrash === true || file.canDelete === true;
         const content = (
           <>
             <div className="rounded-lg border border-white/10 bg-slate-900/80 p-3 text-cyan-300">
@@ -1660,8 +1662,12 @@ function DriveFileList({ files = driveFiles, detailed = false, emptyMessage = "�
             {onRequestDelete && (
               <IconButton
                 label={`${file.name} Google Drive에서 삭제`}
-                onClick={() => onRequestDelete(file)}
+                title={canRemoveFromDrive ? `${file.name} Google Drive 휴지통으로 이동` : "이 파일은 삭제 권한이 없습니다."}
+                onClick={() => {
+                  if (canRemoveFromDrive) onRequestDelete(file);
+                }}
                 tone="danger"
+                disabled={!canRemoveFromDrive || deletingFileId === file.id}
               >
                 {deletingFileId === file.id ? <Clock3 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </IconButton>
@@ -5236,6 +5242,13 @@ export default function Home() {
       return;
     }
 
+    if (driveFileToDelete?.canTrash !== true && driveFileToDelete?.canDelete !== true) {
+      setDriveDeleteMessageType("error");
+      setDriveDeleteMessage("이 파일은 삭제 권한이 없습니다. 공유받은 파일이거나 소유자가 다른 파일일 수 있습니다.");
+      setDriveFileToDelete(null);
+      return;
+    }
+
     setDeletingDriveFileId(fileId);
     setDriveDeleteMessage("");
     setDriveDeleteMessageType("error");
@@ -5251,7 +5264,10 @@ export default function Home() {
       const { data, text } = await readApiResponse(response);
 
       if (!response.ok) {
-        throw new Error(getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
+        if (data?.error === "INSUFFICIENT_FILE_PERMISSION") {
+          throw new Error("이 파일은 삭제 권한이 없습니다. 공유받은 파일이거나 소유자가 다른 파일일 수 있습니다.");
+        }
+        throw new Error(data?.message || getApiErrorMessage(response, data, text, "파일을 삭제하지 못했습니다."));
       }
 
       if (!data?.ok || data?.deletedFileId !== fileId || data?.trashed !== true) {
@@ -5294,6 +5310,11 @@ export default function Home() {
         storageMode={workspaceStorageMode}
         onLogout={handleLogout}
         onRequestDriveDelete={(file) => {
+          if (file?.canTrash !== true && file?.canDelete !== true) {
+            setDriveDeleteMessageType("error");
+            setDriveDeleteMessage("이 파일은 삭제 권한이 없습니다. 공유받은 파일이거나 소유자가 다른 파일일 수 있습니다.");
+            return;
+          }
           setDriveDeleteMessage("");
           setDriveDeleteMessageType("error");
           setDriveFileToDelete(file);
@@ -5328,6 +5349,11 @@ export default function Home() {
         driveStatus={driveStatus}
         status={status}
         onRequestDelete={(file) => {
+          if (file?.canTrash !== true && file?.canDelete !== true) {
+            setDriveDeleteMessageType("error");
+            setDriveDeleteMessage("이 파일은 삭제 권한이 없습니다. 공유받은 파일이거나 소유자가 다른 파일일 수 있습니다.");
+            return;
+          }
           setDriveDeleteMessage("");
           setDriveDeleteMessageType("error");
           setDriveFileToDelete(file);

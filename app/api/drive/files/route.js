@@ -91,7 +91,7 @@ export async function GET(request) {
       const params = new URLSearchParams({
         pageSize: String(Math.min(1000, maxFiles - fetchedFiles.length)),
         orderBy: "modifiedTime desc",
-        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,size,webViewLink,iconLink,owners,parents)",
+        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,size,webViewLink,iconLink,ownedByMe,owners(displayName,emailAddress,me),parents,capabilities(canDelete,canTrash,canEdit),trashed)",
         q: "trashed = false",
         supportsAllDrives: "true",
         includeItemsFromAllDrives: "true",
@@ -138,6 +138,11 @@ export async function GET(request) {
         iconLink: file.iconLink,
         parents: file.parents || [],
         owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || "Google Drive",
+        ownedByMe: Boolean(file.ownedByMe),
+        canDelete: Boolean(file.capabilities?.canDelete),
+        canTrash: Boolean(file.capabilities?.canTrash),
+        canEdit: Boolean(file.capabilities?.canEdit),
+        trashed: Boolean(file.trashed),
         size: formatFileSize(file.size, file.mimeType),
         sizeBytes: Number(file.size) || 0,
       };
