@@ -19,6 +19,7 @@ import {
   updateTaskInSupabase,
 } from "../lib/workspaceStorage";
 import { mockWeather } from "../lib/weatherData";
+import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
 import {
   Bell,
   Bot,
@@ -65,6 +66,7 @@ import {
   Trash2,
   Unlock,
   User,
+  Wallet,
   Wind,
   Youtube,
   X,
@@ -896,6 +898,7 @@ const sidebarItems = [
   { key: "Calendar", label: "캘린더", icon: CalendarDays },
   { key: "Weather", label: "날씨", icon: Cloud },
   { key: "Drive", label: "드라이브", icon: HardDrive },
+  { key: "Assets", label: "자산관리", icon: Wallet },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
   { key: "AI Assistant", label: "AI 비서", icon: Bot },
@@ -1293,6 +1296,7 @@ function ViewTitle({ activeView }) {
     Calendar: "캘린더",
     Weather: "날씨",
     Drive: "드라이브",
+    Assets: "자산관리",
     Notes: "메모",
     Tasks: "할 일",
     "AI Assistant": "AI 비서",
@@ -1305,6 +1309,7 @@ function ViewTitle({ activeView }) {
     Calendar: "나중에 Google 캘린더 API를 연결하기 쉬운 목업 일정 화면입니다.",
     Weather: "현재 위치의 날씨와 시간별/주간 예보를 확인합니다.",
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
+    Assets: "수입과 지출, 알바 급여를 기록하고 현재 자산 흐름을 확인합니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
     "AI Assistant": "예시 명령어를 담은 채팅형 워크스페이스 AI 비서 화면입니다.",
@@ -1320,7 +1325,7 @@ function ViewTitle({ activeView }) {
         <p className="mt-1 text-sm text-slate-400">{subtitles[activeView]}</p>
       </div>
       <div className="rounded-lg border border-white/10 bg-white/[0.045] px-3 py-2 text-xs text-slate-400">
-        {activeView === "Tasks" || activeView === "Notes" ? "로컬 저장됨" : "목업 데이터"}
+        {activeView === "Assets" ? "Supabase 동기화" : activeView === "Tasks" || activeView === "Notes" ? "로컬 저장됨" : "목업 데이터"}
       </div>
     </div>
   );
@@ -2385,7 +2390,7 @@ function WeatherView({ weather, weatherStatus, weatherError }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather, onOpenNotes }) {
+function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather, onOpenNotes, assetManager, onOpenAssets }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const [dashboardDrivePage, setDashboardDrivePage] = useState(1);
@@ -2423,6 +2428,31 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
         <div className="p-5">
           <GoogleAccountPanel session={session} status={status} onLogout={onLogout} />
         </div>
+      </GlassCard>
+
+      <GlassCard className="xl:col-span-12">
+        <CardHeader
+          icon={Wallet}
+          title="자산 요약"
+          actionContent={
+            <button type="button" onClick={onOpenAssets} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white">
+              자산관리 열기
+            </button>
+          }
+        />
+        <div className="grid gap-3 p-5 sm:grid-cols-3">
+          {[
+            ["현재 총 자산", assetManager.data.summary.totalBalance, "text-cyan-200"],
+            ["이번 달 수입", assetManager.data.summary.monthlyIncome, "text-emerald-200"],
+            ["이번 달 지출", assetManager.data.summary.monthlyExpense, "text-rose-200"],
+          ].map(([label, amount, tone]) => (
+            <div key={label} className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className={`mt-2 text-lg font-semibold ${tone}`}>{formatWon(amount)}</p>
+            </div>
+          ))}
+        </div>
+        {assetManager.status === "missing" && <p className="px-5 pb-4 text-sm text-amber-200">자산관리 테이블이 아직 준비되지 않았습니다. SQL을 실행해주세요.</p>}
       </GlassCard>
 
       <WeatherSummaryCard weather={weather} weatherStatus={weatherStatus} weatherError={weatherError} onOpenWeather={onOpenWeather} />
@@ -4176,6 +4206,7 @@ function getTimeBasedGreeting(hour) {
 
 export default function Home() {
   const { data: session, status } = useSession();
+  const assetManager = useAssetManager(status);
   const [activeView, setActiveView] = useState("Dashboard");
   const [tasks, setTasks] = useState(() => normalizeTasks(initialTasks));
   const [notes, setNotes] = useState(initialNotes);
@@ -5327,6 +5358,8 @@ export default function Home() {
         weatherError={weatherError}
         onOpenWeather={() => setActiveView("Weather")}
         onOpenNotes={() => setActiveView("Notes")}
+        assetManager={assetManager}
+        onOpenAssets={() => setActiveView("Assets")}
       />
     ),
     Calendar: (
@@ -5343,6 +5376,7 @@ export default function Home() {
       />
     ),
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
+    Assets: <AssetsView manager={assetManager} authStatus={status} />,
     Drive: (
       <DriveView
         files={driveFilesData}
