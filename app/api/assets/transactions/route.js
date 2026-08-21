@@ -34,7 +34,7 @@ export async function POST(request) {
     const payload = buildAssetTransactionPayload(body);
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
-      .from("asset_transactions")
+      .from("finance_transactions")
       .insert({ user_email: userEmail, ...payload })
       .select(ASSET_TRANSACTION_COLUMNS)
       .single();
@@ -54,7 +54,7 @@ export async function PATCH(request) {
     const payload = buildAssetTransactionPayload(body, { partial: true });
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
-      .from("asset_transactions")
+      .from("finance_transactions")
       .update({ ...payload, updated_at: new Date().toISOString() })
       .eq("id", body.id)
       .eq("user_email", userEmail)
@@ -74,7 +74,7 @@ export async function DELETE(request) {
     const body = await request.json().catch(() => ({}));
     if (!body.id) return Response.json({ error: "ASSET_TRANSACTION_ID_REQUIRED", message: "삭제할 거래를 찾지 못했습니다." }, { status: 400 });
     const supabase = getSupabaseServerClient();
-    const { error } = await supabase.from("asset_transactions").delete().eq("id", body.id).eq("user_email", userEmail);
+    const { error } = await supabase.from("finance_transactions").delete().eq("id", body.id).eq("user_email", userEmail);
     if (error) throw error;
     return Response.json({ ok: true, deletedId: body.id });
   } catch (error) {

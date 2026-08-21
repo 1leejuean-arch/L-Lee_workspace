@@ -17,7 +17,7 @@ export async function PATCH(request) {
 
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
-      .from("asset_settings")
+      .from("finance_settings")
       .upsert(
         { user_email: userEmail, initial_balance: initialBalance, updated_at: new Date().toISOString() },
         { onConflict: "user_email" },

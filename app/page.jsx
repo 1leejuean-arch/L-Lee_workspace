@@ -20,6 +20,7 @@ import {
 } from "../lib/workspaceStorage";
 import { mockWeather } from "../lib/weatherData";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
+import LLeeAIView from "./components/LLeeAIView";
 import {
   Bell,
   Bot,
@@ -899,6 +900,7 @@ const sidebarItems = [
   { key: "Weather", label: "날씨", icon: Cloud },
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Assets", label: "자산관리", icon: Wallet },
+  { key: "L-Lee AI", label: "L-Lee AI", icon: Sparkles },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
   { key: "AI Assistant", label: "AI 비서", icon: Bot },
@@ -1297,6 +1299,7 @@ function ViewTitle({ activeView }) {
     Weather: "날씨",
     Drive: "드라이브",
     Assets: "자산관리",
+    "L-Lee AI": "L-Lee AI",
     Notes: "메모",
     Tasks: "할 일",
     "AI Assistant": "AI 비서",
@@ -1310,6 +1313,7 @@ function ViewTitle({ activeView }) {
     Weather: "현재 위치의 날씨와 시간별/주간 예보를 확인합니다.",
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
     Assets: "수입과 지출, 알바 급여를 기록하고 현재 자산 흐름을 확인합니다.",
+    "L-Lee AI": "Workspace의 일정, 자산, 프로젝트와 연결될 개인 AI Assistant입니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
     "AI Assistant": "예시 명령어를 담은 채팅형 워크스페이스 AI 비서 화면입니다.",
@@ -1325,7 +1329,7 @@ function ViewTitle({ activeView }) {
         <p className="mt-1 text-sm text-slate-400">{subtitles[activeView]}</p>
       </div>
       <div className="rounded-lg border border-white/10 bg-white/[0.045] px-3 py-2 text-xs text-slate-400">
-        {activeView === "Assets" ? "Supabase 동기화" : activeView === "Tasks" || activeView === "Notes" ? "로컬 저장됨" : "목업 데이터"}
+        {activeView === "Assets" ? "Supabase 동기화" : activeView === "L-Lee AI" ? "연결 준비 중" : activeView === "Tasks" || activeView === "Notes" ? "로컬 저장됨" : "목업 데이터"}
       </div>
     </div>
   );
@@ -5377,6 +5381,7 @@ export default function Home() {
     ),
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
     Assets: <AssetsView manager={assetManager} authStatus={status} />,
+    "L-Lee AI": <LLeeAIView />,
     Drive: (
       <DriveView
         files={driveFilesData}
