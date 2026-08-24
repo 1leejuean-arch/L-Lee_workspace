@@ -21,12 +21,14 @@ import {
 import { mockWeather } from "../lib/weatherData";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
 import LLeeAIView from "./components/LLeeAIView";
+import MeetingMinutesView, { useMeetingMinutes } from "./components/MeetingMinutesView";
 import {
   Bell,
   Bot,
   CalendarDays,
   Check,
   CheckSquare,
+  ClipboardList,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -901,6 +903,7 @@ const sidebarItems = [
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Assets", label: "자산관리", icon: Wallet },
   { key: "L-Lee AI", label: "L-Lee AI", icon: Sparkles },
+  { key: "Meetings", label: "회의록", icon: ClipboardList },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
   { key: "AI Assistant", label: "AI 비서", icon: Bot },
@@ -1300,6 +1303,7 @@ function ViewTitle({ activeView }) {
     Drive: "드라이브",
     Assets: "자산관리",
     "L-Lee AI": "L-Lee AI",
+    Meetings: "회의록",
     Notes: "메모",
     Tasks: "할 일",
     "AI Assistant": "AI 비서",
@@ -1314,6 +1318,7 @@ function ViewTitle({ activeView }) {
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
     Assets: "수입과 지출, 알바 급여를 기록하고 현재 자산 흐름을 확인합니다.",
     "L-Lee AI": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
+    Meetings: "회의 내용, 결정 사항, 할 일을 기록하고 관리합니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
     "AI Assistant": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
@@ -2394,7 +2399,7 @@ function WeatherView({ weather, weatherStatus, weatherError }) {
   );
 }
 
-function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather, onOpenNotes, assetManager, onOpenAssets }) {
+function DashboardView({ tasks, notes, meetings, meetingStatus, completedCount, toggleTask, monthDays, markedDays, currentDay, visibleCalendarDate, todayDate, session, status, calendarEvents, calendarStatus, driveFilesData, driveStatus, storageMode, onLogout, onRequestDriveDelete, deletingDriveFileId, driveDeleteMessage, driveDeleteMessageType, weather, weatherStatus, weatherError, onOpenWeather, onOpenNotes, onOpenMeetings, assetManager, onOpenAssets }) {
   const [scheduleRange, setScheduleRange] = useState("today");
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const [dashboardDrivePage, setDashboardDrivePage] = useState(1);
@@ -2561,6 +2566,30 @@ function DashboardView({ tasks, notes, completedCount, toggleTask, monthDays, ma
       <GlassCard className="xl:col-span-4">
         <CardHeader icon={CheckSquare} title="오늘의 할 일" />
         <TaskList tasks={tasks.slice(0, 5)} onToggle={toggleTask} />
+      </GlassCard>
+
+      <GlassCard className="xl:col-span-4">
+        <CardHeader
+          icon={ClipboardList}
+          title="최근 회의록"
+          actionContent={
+            <button type="button" onClick={onOpenMeetings} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white">
+              전체 회의록 보기
+            </button>
+          }
+        />
+        <div className="space-y-2 p-5">
+          {meetings.slice(0, 3).map((meeting) => (
+            <button key={meeting.id} type="button" onClick={onOpenMeetings} className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/35 px-3 py-3 text-left transition hover:bg-white/[0.06]">
+              <span className="min-w-0 truncate text-sm text-slate-200">{meeting.title}</span>
+              <span className="shrink-0 text-xs text-slate-500">{meeting.meetingDate}</span>
+            </button>
+          ))}
+          {meetingStatus === "loading" && <p className="py-4 text-center text-sm text-slate-500">회의록을 불러오는 중...</p>}
+          {meetingStatus === "missing" && <p className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">회의록 테이블이 아직 준비되지 않았습니다. SQL을 실행해주세요.</p>}
+          {meetingStatus === "ready" && meetings.length === 0 && <p className="py-4 text-center text-sm text-slate-500">아직 회의록이 없습니다.</p>}
+          {meetingStatus === "unauthenticated" && <p className="py-4 text-center text-sm text-slate-500">로그인하면 최근 회의록을 볼 수 있습니다.</p>}
+        </div>
       </GlassCard>
 
       <GlassCard className="xl:col-span-8">
@@ -4205,6 +4234,7 @@ function getTimeBasedGreeting(hour) {
 export default function Home() {
   const { data: session, status } = useSession();
   const assetManager = useAssetManager(status);
+  const meetingManager = useMeetingMinutes(status);
   const [activeView, setActiveView] = useState("Dashboard");
   const [tasks, setTasks] = useState(() => normalizeTasks(initialTasks));
   const [notes, setNotes] = useState(initialNotes);
@@ -4639,6 +4669,14 @@ export default function Home() {
           ? `${note.title} ${note.tag || ""}`
           : `${note.title} ${note.body || ""} ${note.tag || ""}`,
       })),
+      ...meetingManager.meetings.map((meeting) => ({
+        id: `meeting-${meeting.id}`,
+        title: meeting.title,
+        helper: `${meeting.meetingDate} · ${meeting.attendees || "참석자 미입력"}`,
+        type: "회의록",
+        view: "Meetings",
+        searchText: `${meeting.title} ${meeting.attendees || ""} ${meeting.content || ""} ${meeting.decisions || ""} ${meeting.actionItems || ""} ${meeting.tag || ""}`,
+      })),
       ...searchableCalendarEvents.map((event) => ({
         id: `event-${event.id}`,
         title: event.title,
@@ -4660,7 +4698,7 @@ export default function Home() {
     ];
 
     return items.filter((item) => matchesSearchQuery(item.searchText, query));
-  }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, notes, searchQuery, tasks, unlockedNotes]);
+  }, [calendarEvents.lookup, calendarEvents.month, calendarEvents.today, calendarEvents.week, driveFilesData, meetingManager.meetings, notes, searchQuery, tasks, unlockedNotes]);
 
   const notifications = useMemo(() => {
     const remainingTasks = tasks.filter((task) => !task.completed).length;
@@ -5323,6 +5361,8 @@ export default function Home() {
       <DashboardView
         tasks={tasks}
         notes={notes}
+        meetings={meetingManager.meetings}
+        meetingStatus={meetingManager.status}
         completedCount={completedCount}
         toggleTask={toggleTask}
         monthDays={monthDays}
@@ -5356,6 +5396,7 @@ export default function Home() {
         weatherError={weatherError}
         onOpenWeather={() => setActiveView("Weather")}
         onOpenNotes={() => setActiveView("Notes")}
+        onOpenMeetings={() => setActiveView("Meetings")}
         assetManager={assetManager}
         onOpenAssets={() => setActiveView("Assets")}
       />
@@ -5376,6 +5417,7 @@ export default function Home() {
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
     Assets: <AssetsView manager={assetManager} authStatus={status} />,
     "L-Lee AI": <LLeeAIView />,
+    Meetings: <MeetingMinutesView manager={meetingManager} authStatus={status} />,
     Drive: (
       <DriveView
         files={driveFilesData}
