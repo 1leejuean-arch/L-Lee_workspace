@@ -1313,10 +1313,10 @@ function ViewTitle({ activeView }) {
     Weather: "현재 위치의 날씨와 시간별/주간 예보를 확인합니다.",
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
     Assets: "수입과 지출, 알바 급여를 기록하고 현재 자산 흐름을 확인합니다.",
-    "L-Lee AI": "Workspace의 일정, 자산, 프로젝트와 연결될 개인 AI Assistant입니다.",
+    "L-Lee AI": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
-    "AI Assistant": "예시 명령어를 담은 채팅형 워크스페이스 AI 비서 화면입니다.",
+    "AI Assistant": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
     "Quick Launch": "자주 쓰는 외부 앱과 서비스를 한곳에서 빠르게 엽니다.",
     Settings: "프로필, 테마, Google 연결 상태를 확인하는 설정 화면입니다.",
   };
@@ -3781,10 +3781,10 @@ function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
   );
 }
 
-function MiniAssistantBox({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
+function MiniAssistantBox({ onOpenFullAssistant }) {
   const [miniInput, setMiniInput] = useState("");
   const [miniStatus, setMiniStatus] = useState("idle");
-  const [miniMessage, setMiniMessage] = useState("간단한 명령을 바로 실행해요.");
+  const [miniMessage, setMiniMessage] = useState("자산, 일정, 할 일을 읽기 전용으로 요약해요.");
 
   async function submitMiniAssistant(event) {
     event.preventDefault();
@@ -3795,22 +3795,16 @@ function MiniAssistantBox({ status, calendarEvents, driveFilesData, onCalendarCr
     setMiniMessage("처리 중이에요...");
 
     try {
-      const result = await executeWorkspaceAiCommand(
-        command,
-        {
-          status,
-          calendarEvents,
-          driveFilesData,
-          onCalendarCreated,
-          onTaskCreated,
-          onNoteCreated,
-        },
-        { confirmCalendar: false },
-      );
-      setMiniMessage(result.message || "처리했어요.");
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: command }),
+      });
+      const data = await response.json().catch(() => ({}));
+      setMiniMessage(data.answer || "답변을 불러오지 못했습니다.");
       setMiniInput("");
-    } catch (error) {
-      setMiniMessage(getCalendarCreateErrorMessage(error));
+    } catch {
+      setMiniMessage("L-Lee AI에 연결하지 못했습니다.");
     } finally {
       setMiniStatus("idle");
     }
@@ -3838,7 +3832,7 @@ function MiniAssistantBox({ status, calendarEvents, driveFilesData, onCalendarCr
         <input
           value={miniInput}
           onChange={(event) => setMiniInput(event.target.value)}
-          placeholder="AI에게 바로 요청..."
+          placeholder="AI에게 질문..."
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
         />
         <button
@@ -5442,18 +5436,7 @@ export default function Home() {
         taskSaveMessage={taskSaveMessage}
       />
     ),
-    "AI Assistant": (
-      <AssistantView
-        assistantInput={assistantInput}
-        setAssistantInput={setAssistantInput}
-        status={status}
-        calendarEvents={calendarEvents}
-        driveFilesData={driveFilesData}
-        onCalendarCreated={() => loadCalendarEvents()}
-        onTaskCreated={createTaskFromTitle}
-        onNoteCreated={createNoteFromDraft}
-      />
-    ),
+    "AI Assistant": <LLeeAIView />,
     "Quick Launch": <QuickLaunchView />,
     Settings: (
       <SettingsView
