@@ -179,15 +179,6 @@ const quickLaunchApps = [
   },
 ];
 
-const assistantAppShortcuts = [
-  ...quickLaunchApps,
-  {
-    name: "KakaoTalk",
-    aliases: ["카톡", "카카오톡", "kakao", "kakaotalk"],
-    href: "https://www.kakaocorp.com/page/service/service/KakaoTalk",
-  },
-];
-
 async function readApiResponse(response) {
   const contentType = response.headers.get("content-type") || "";
 
@@ -222,17 +213,6 @@ function getNoteSecurityMessage(error) {
   return "메모 보안 작업을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.";
 }
 
-function normalizeCommand(input) {
-  return input.trim().toLowerCase();
-}
-
-function findAssistantShortcut(input) {
-  const normalizedInput = normalizeCommand(input);
-  return assistantAppShortcuts.find((app) =>
-    (app.aliases || [app.name]).some((alias) => normalizedInput.includes(alias.toLowerCase())),
-  );
-}
-
 function normalizeInput(input) {
   const lower = input.trim().toLowerCase();
   const cleaned = lower
@@ -253,163 +233,6 @@ function includesAny(normalized, keywords) {
     const compactKeyword = keyword.replace(/\s+/g, "");
     return normalized.cleaned.includes(keyword) || normalized.compact.includes(compactKeyword);
   });
-}
-
-const calendarNouns = ["일정", "스케줄", "약속", "예약", "캘린더"];
-const calendarSummaryWords = [
-  "뭐 있어",
-  "뭐있어",
-  "뭐 있음",
-  "뭐있음",
-  "있어",
-  "있음",
-  "있냐",
-  "있나",
-  "있나요",
-  "있는지",
-  "알려줘",
-  "보여줘",
-  "정리해줘",
-  "정리",
-  "요약해줘",
-  "요약",
-  "남은",
-  "잡힌",
-  "예약된",
-];
-const calendarCreateWords = ["추가", "넣어", "예약해", "잡아", "만들어", "등록"];
-const calendarUpdateWords = ["수정", "변경", "바꿔", "미뤄", "뒤로", "앞당겨", "옮겨"];
-const calendarDeleteWords = ["삭제", "지워", "없애", "취소"];
-const calendarFindWords = ["찾아", "검색", "관련", "만 보여", "만보여"];
-const calendarDateWords = [
-  "오늘",
-  "내일",
-  "이번주",
-  "이번 주",
-  "다음주",
-  "다음 주",
-  "담주",
-  "이번달",
-  "이번 달",
-  "다음달",
-  "다음 달",
-  "올해",
-  "이번년도",
-  "이번 년도",
-];
-
-function hasCalendarContext(normalized) {
-  return (
-    includesAny(normalized, calendarNouns) ||
-    includesAny(normalized, calendarDateWords) ||
-    /\d{4}-\d{1,2}-\d{1,2}/.test(normalized.cleaned) ||
-    /\d{1,2}\s*월\s*\d{1,2}\s*일/.test(normalized.cleaned) ||
-    /\d{1,2}\s*\/\s*\d{1,2}/.test(normalized.cleaned)
-  );
-}
-
-function detectCalendarAction(input) {
-  const normalized = normalizeInput(input);
-
-  if (includesAny(normalized, calendarDeleteWords)) return "delete";
-  if (includesAny(normalized, calendarUpdateWords)) return "update";
-  if (includesAny(normalized, calendarCreateWords) && !includesAny(normalized, ["예약된", "예약되어"])) return "create";
-  if (includesAny(normalized, calendarFindWords)) return "find";
-  if (includesAny(normalized, calendarSummaryWords) || includesAny(normalized, calendarDateWords)) return "summary";
-
-  return "unknown";
-}
-
-function detectCalendarIntent(input) {
-  const normalized = normalizeInput(input);
-  if (!hasCalendarContext(normalized)) return null;
-
-  const action = detectCalendarAction(input);
-  if (action === "create") return { intent: "calendar_create", action };
-  if (action === "update") return { intent: "calendar_update", action };
-  if (action === "delete") return { intent: "calendar_delete", action };
-  if (action === "find") return { intent: "calendar_find", action };
-
-  const range = detectDateRange(input);
-  if (action === "summary" || range.scope !== "today" || includesAny(normalized, calendarNouns)) {
-    const intentByScope = {
-      today: "calendar_summary_today",
-      tomorrow: "calendar_summary_tomorrow",
-      week: "calendar_summary_week",
-      next_week: "calendar_summary_next_week",
-      month: "calendar_summary_month",
-      next_month: "calendar_summary_next_month",
-      year: "calendar_summary_year",
-      date: "calendar_summary_date",
-    };
-    return { intent: intentByScope[range.scope] || "calendar_summary_today", action: "summary", range };
-  }
-
-  return null;
-}
-
-function getAssistantIntent(input) {
-  const text = normalizeCommand(input);
-  const normalized = normalizeInput(input);
-  const calendarIntent = detectCalendarIntent(input);
-
-  if ((text.includes("열어") || text.includes("켜줘") || text.includes("바로가기")) && findAssistantShortcut(text)) {
-    return "app_open";
-  }
-  if (text.includes("드라이브") && (text.includes("정리") || text.includes("최근") || text.includes("보여") || text.includes("요약"))) {
-    return "drive_summary";
-  }
-  if (calendarIntent) {
-    return calendarIntent.intent;
-  }
-  if ((text.includes("할 일") || text.includes("할일")) && (text.includes("추가") || text.includes("넣어") || text.includes("등록"))) {
-    return "task_create";
-  }
-  if (text.includes("메모") && (text.includes("추가") || text.includes("적어") || text.includes("기록") || text.includes("저장"))) {
-    return "note_create";
-  }
-  if (hasCalendarContext(normalized) && includesAny(normalized, calendarCreateWords)) {
-    return "calendar_create";
-  }
-
-  return "general_help";
-}
-
-function stripCommandText(input, patterns) {
-  let value = input.trim();
-  patterns.forEach((pattern) => {
-    value = value.replace(pattern, " ");
-  });
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function extractTaskTitle(input) {
-  return stripCommandText(input, [/할\s*일/g, /오늘/g, /로/g, /에/g, /추가해줘/g, /추가/g, /넣어줘/g, /등록해줘/g]).trim();
-}
-
-function extractNoteDraft(input) {
-  const cleaned = stripCommandText(input, [/메모에/g, /메모로/g, /메모/g, /적어줘/g, /기록해줘/g, /저장해줘/g, /추가해줘/g]);
-  const [rawTitle, ...bodyParts] = cleaned.split(":");
-  const body = bodyParts.join(":").trim();
-
-  if (body) {
-    return {
-      title: rawTitle.trim() || "메모",
-      body,
-      tag: "AI",
-    };
-  }
-
-  return {
-    title: "AI 메모",
-    body: cleaned.trim(),
-    tag: "AI",
-  };
-}
-
-function getEventStart(event) {
-  const date = new Date(event.start);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 const KOREA_TIME_ZONE = "Asia/Seoul";
@@ -792,121 +615,16 @@ function getCalendarCreateErrorMessage(error) {
   return "일정을 추가하지 못했습니다. 잠시 후 다시 시도해주세요.";
 }
 
-async function executeWorkspaceAiCommand(command, context, options = {}) {
-  const { status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated } = context;
-  const { confirmCalendar = true } = options;
-  const intent = getAssistantIntent(command);
-
-  if (intent === "app_open") {
-    const shortcut = findAssistantShortcut(command);
-    if (!shortcut) {
-      return { message: "해당 바로가기를 찾지 못했어요. 앱 바로가기 목록을 확인해주세요." };
-    }
-
-    window.open(shortcut.href, "_blank", "noopener,noreferrer");
-    return { message: `${shortcut.name}을 새 탭으로 열었어요.` };
-  }
-
-  if (intent.startsWith("calendar_summary") || intent === "calendar_find") {
-    return { message: await summarizeCalendar(command, calendarEvents, status) };
-  }
-
-  if (intent === "drive_summary") {
-    return { message: summarizeDriveFiles(driveFilesData) };
-  }
-
-  if (intent === "task_create") {
-    const title = extractTaskTitle(command);
-    if (!title) return { message: "추가할 할 일 내용을 다시 알려주세요." };
-
-    await onTaskCreated(title);
-    return { message: `좋아요. 할 일에 '${title}'을 추가했어요.` };
-  }
-
-  if (intent === "note_create") {
-    const note = extractNoteDraft(command);
-    if (!note.body) return { message: "메모에 적을 내용을 다시 알려주세요." };
-
-    await onNoteCreated(note);
-    return { message: `좋아요. '${note.title}' 메모를 추가했어요.` };
-  }
-
-  if (intent === "calendar_update") {
-    return { message: "어떤 일정을 수정할지 조금 더 알려주세요. 지금은 캘린더 화면에서 일정 옆의 > 버튼을 눌러 제목, 날짜, 시간, 장소, 설명을 수정할 수 있어요." };
-  }
-
-  if (intent === "calendar_delete") {
-    return { message: "삭제할 일정 제목이나 날짜를 알려주세요. 정확한 삭제는 캘린더 화면에서 일정 옆의 > 버튼을 누른 뒤 삭제를 선택하면 Google Calendar에도 반영돼요." };
-  }
-
-  if (intent !== "calendar_create") {
-    return {
-      message: "이렇게 말해보세요: '오늘 일정 요약해줘', '최근 드라이브 파일 정리해줘', '할 일에 과제 제출 추가해줘', '인스타 열어줘'.",
-    };
-  }
-
-  if (status !== "authenticated") {
-    return { message: "Google 계정 연결이 필요해요. 계정을 연결하면 일정을 추가할 수 있어요." };
-  }
-
-  const parseResponse = await fetch("/api/assistant/parse", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ input: command }),
-  });
-  const { data: parsedEvent, text: parseText } = await readApiResponse(parseResponse);
-
-  if (!parseResponse.ok || parsedEvent?.intent !== "create_calendar_event") {
-    return {
-      message:
-        parsedEvent?.message ||
-        getApiErrorMessage(parseResponse, parsedEvent, parseText, "아직은 일정 추가 요청을 중심으로 도와드릴 수 있어요."),
-    };
-  }
-
-  if (confirmCalendar) {
-    return {
-      pendingEvent: parsedEvent,
-      message: `${parsedEvent.displayDate} ${parsedEvent.displayTime}에 '${parsedEvent.title}'을 ${parsedEvent.durationText} 일정으로 추가할까요?`,
-    };
-  }
-
-  const createResponse = await fetch("/api/calendar/create", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      title: parsedEvent.title,
-      date: parsedEvent.date,
-      startTime: parsedEvent.startTime,
-      endTime: parsedEvent.endTime,
-      description: parsedEvent.description,
-    }),
-  });
-  const { data, text } = await readApiResponse(createResponse);
-
-  if (!createResponse.ok) {
-    throw new Error(getApiErrorMessage(createResponse, data, text, "일정 추가에 실패했습니다."));
-  }
-
-  await onCalendarCreated();
-  return { message: data?.message || "좋아요. 일정을 추가했어요." };
-}
-
 const sidebarItems = [
   { key: "Dashboard", label: "대시보드", icon: LayoutDashboard },
+  { key: "L-Lee AI", label: "L-Lee AI", icon: Sparkles },
   { key: "Calendar", label: "캘린더", icon: CalendarDays },
   { key: "Weather", label: "날씨", icon: Cloud },
   { key: "Drive", label: "드라이브", icon: HardDrive },
   { key: "Assets", label: "자산관리", icon: Wallet },
-  { key: "L-Lee AI", label: "L-Lee AI", icon: Sparkles },
   { key: "Meetings", label: "회의록", icon: ClipboardList },
   { key: "Notes", label: "메모", icon: FileText },
   { key: "Tasks", label: "할 일", icon: CheckSquare },
-  { key: "AI Assistant", label: "AI 비서", icon: Bot },
   { key: "Quick Launch", label: "앱 바로가기", icon: Link },
   { key: "Settings", label: "설정", icon: Settings },
 ];
@@ -923,7 +641,7 @@ const driveFiles = [
   { id: 1, name: "워크스페이스 로드맵.pdf", type: "pdf", updated: "12분 전", owner: "주언", size: "2.4 MB" },
   { id: 2, name: "Google API 연동 메모", type: "doc", updated: "1시간 전", owner: "주언", size: "84 KB" },
   { id: 3, name: "개인 지표.xlsx", type: "sheet", updated: "오늘", owner: "워크스페이스", size: "415 KB" },
-  { id: 4, name: "AI 비서 프롬프트", type: "doc", updated: "어제", owner: "주언", size: "126 KB" },
+  { id: 4, name: "L-Lee AI 프롬프트", type: "doc", updated: "어제", owner: "주언", size: "126 KB" },
   { id: 5, name: "디자인 참고 보드", type: "folder", updated: "6월 12일", owner: "워크스페이스", size: "18개 항목" },
 ];
 
@@ -944,7 +662,7 @@ const initialNotes = [
   },
   {
     id: 2,
-    title: "AI 비서 동작 방식",
+    title: "L-Lee AI 동작 방식",
     body: "AI는 먼저 사용자의 의도를 파악한 뒤 캘린더, 드라이브, 메모, 할 일 중 어떤 작업이 필요한지 제안해야 합니다.",
     tag: "AI",
   },
@@ -960,26 +678,6 @@ const initialNotes = [
     body: "저녁 흐름: 오늘 일정 요약, 남은 할 일, 내일 집중 시간, 드라이브 변경 사항 요약.",
     tag: "루틴",
   },
-];
-
-const aiSuggestions = [
-  "내일 오후 6시에 회의 예약해줘",
-  "오늘 일정 요약해줘",
-  "오늘 날씨 알려줘",
-  "이번주 일정 뭐 있어?",
-  "다음주에 회의 일정있어?",
-  "6월 21일에 무슨 일정있어?",
-  "최근 드라이브 파일 정리해줘",
-  "이번 주 할 일 우선순위 잡아줘",
-  "인스타 열어줘",
-  "디스코드 열어줘",
-  "내 메일 열어줘",
-];
-
-const aiMessages = [
-  { id: 1, role: "assistant", text: "안녕하세요, 주언님. 오늘 일정, 파일, 메모, 할 일을 한곳에서 정리할 준비가 되어 있어요." },
-  { id: 2, role: "user", text: "오늘 남은 일정과 할 일을 요약해줘." },
-  { id: 3, role: "assistant", text: "남은 일정은 집중 작업 시간과 저녁 회고가 있고, 우선 처리할 작업은 캘린더 API 권한 범위 검토입니다." },
 ];
 
 const taskTitleTranslations = {
@@ -1116,7 +814,7 @@ const noteTranslations = {
     tag: "아키텍처",
   },
   "Assistant behavior": {
-    title: "AI 비서 동작 방식",
+    title: "L-Lee AI 동작 방식",
     body: "AI는 먼저 사용자의 의도를 파악한 뒤 캘린더, 드라이브, 메모, 할 일 중 어떤 작업이 필요한지 제안해야 합니다.",
     tag: "AI",
   },
@@ -1306,7 +1004,6 @@ function ViewTitle({ activeView }) {
     Meetings: "회의록",
     Notes: "메모",
     Tasks: "할 일",
-    "AI Assistant": "AI 비서",
     "Quick Launch": "앱 바로가기",
     Settings: "설정",
   };
@@ -1317,11 +1014,10 @@ function ViewTitle({ activeView }) {
     Weather: "현재 위치의 날씨와 시간별/주간 예보를 확인합니다.",
     Drive: "나중에 Google 드라이브 데이터로 바꿀 수 있는 최근 파일과 폴더 화면입니다.",
     Assets: "수입과 지출, 알바 급여를 기록하고 현재 자산 흐름을 확인합니다.",
-    "L-Lee AI": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
+    "L-Lee AI": "워크스페이스의 일정, 자산, 할 일, 회의록을 읽고 요약합니다.",
     Meetings: "회의 내용, 결정 사항, 할 일을 기록하고 관리합니다.",
     Notes: "개인 메모를 작성, 수정, 삭제하고 이 브라우저에 저장합니다.",
     Tasks: "할 일을 추가, 완료, 삭제하고 이 브라우저에 저장합니다.",
-    "AI Assistant": "워크스페이스의 일정, 자산, 할 일을 읽고 요약하는 AI 비서입니다.",
     "Quick Launch": "자주 쓰는 외부 앱과 서비스를 한곳에서 빠르게 엽니다.",
     Settings: "프로필, 테마, Google 연결 상태를 확인하는 설정 화면입니다.",
   };
@@ -3779,49 +3475,20 @@ function TasksView({
   );
 }
 
-function AssistantCard({ assistantInput, setAssistantInput, compact = false }) {
-  return (
-    <>
-      <CardHeader icon={Sparkles} title="AI 비서" action={false} />
-      <div className="p-5">
-        <div className="rounded-lg border border-cyan-300/20 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-4">
-          <p className="text-sm text-slate-300">L-Lee AI에게 워크스페이스 정리, 요약, 초안 작성을 요청해보세요.</p>
-          <div className="mt-4 flex gap-2">
-            <input
-              value={assistantInput}
-              onChange={(event) => setAssistantInput(event.target.value)}
-              placeholder="오늘 무엇을 정리할까요?"
-              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-violet-300/50"
-            />
-            <button type="button" aria-label="AI 비서에게 보내기" className="rounded-lg bg-cyan-300 px-4 text-slate-950 transition hover:bg-cyan-200">
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {aiSuggestions.slice(0, compact ? 3 : aiSuggestions.length).map((suggestion) => (
-            <button key={suggestion} type="button" onClick={() => setAssistantInput(suggestion)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function MiniAssistantBox({ onOpenFullAssistant }) {
+function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
   const [miniInput, setMiniInput] = useState("");
   const [miniStatus, setMiniStatus] = useState("idle");
-  const [miniMessage, setMiniMessage] = useState("자산, 일정, 할 일을 읽기 전용으로 요약해요.");
+  const [miniQuestion, setMiniQuestion] = useState("");
+  const [miniMessage, setMiniMessage] = useState("추천 질문을 누르거나 궁금한 내용을 입력해보세요.");
+  const suggestions = ["현재 자산", "오늘 일정", "남은 할 일"];
 
-  async function submitMiniAssistant(event) {
-    event.preventDefault();
-    const command = miniInput.trim();
+  async function askMiniAssistant(rawQuestion) {
+    const command = String(rawQuestion ?? miniInput).trim();
     if (!command || miniStatus === "loading") return;
 
     setMiniStatus("loading");
-    setMiniMessage("처리 중이에요...");
+    setMiniQuestion(command);
+    setMiniMessage("확인 중...");
 
     try {
       const response = await fetch("/api/assistant", {
@@ -3830,234 +3497,59 @@ function MiniAssistantBox({ onOpenFullAssistant }) {
         body: JSON.stringify({ message: command }),
       });
       const data = await response.json().catch(() => ({}));
-      setMiniMessage(data.answer || "답변을 불러오지 못했습니다.");
+      setMiniMessage(data.answer || "답변을 가져오지 못했습니다. 잠시 후 다시 시도해주세요.");
       setMiniInput("");
     } catch {
-      setMiniMessage("L-Lee AI에 연결하지 못했습니다.");
+      setMiniMessage("답변을 가져오지 못했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setMiniStatus("idle");
     }
   }
 
-  return (
-    <div className="rounded-lg border border-cyan-300/15 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-cyan-300" />
-          <p className="text-xs font-semibold text-slate-100">미니 AI 비서</p>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenFullAssistant}
-          className="rounded-md px-2 py-1 text-[11px] text-cyan-200 transition hover:bg-white/10 hover:text-white"
-        >
-          전체
-        </button>
-      </div>
-      <p className="mt-2 line-clamp-3 rounded-lg border border-white/10 bg-slate-950/35 p-2 text-[11px] leading-5 text-slate-300">
-        {miniMessage}
-      </p>
-      <form onSubmit={submitMiniAssistant} className="mt-3 flex gap-2">
-        <input
-          value={miniInput}
-          onChange={(event) => setMiniInput(event.target.value)}
-          placeholder="AI에게 질문..."
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/55 px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
-        />
-        <button
-          type="submit"
-          disabled={!miniInput.trim() || miniStatus === "loading"}
-          aria-label="미니 AI 전송"
-          className="rounded-lg bg-cyan-300 px-3 text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {miniStatus === "loading" ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function EdgeMiniAssistant({ status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated, onOpenFullAssistant }) {
-  return (
-    <div className="group fixed bottom-8 right-0 z-40 hidden h-80 w-[340px] translate-x-[300px] transition-transform duration-300 ease-out hover:translate-x-0 focus-within:translate-x-0 lg:block">
-      <div className="absolute left-0 top-1/2 flex -translate-x-full -translate-y-1/2 items-center gap-2 rounded-l-lg border border-r-0 border-cyan-300/20 bg-slate-950/90 px-2 py-3 text-cyan-200 shadow-2xl shadow-black/30 backdrop-blur-xl">
-        <Sparkles className="h-4 w-4" />
-        <span className="text-[11px] font-semibold tracking-[0.14em] [writing-mode:vertical-rl]">AI</span>
-      </div>
-      <div className="h-full rounded-l-xl border border-r-0 border-cyan-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-2xl">
-        <MiniAssistantBox
-          status={status}
-          calendarEvents={calendarEvents}
-          driveFilesData={driveFilesData}
-          onCalendarCreated={onCalendarCreated}
-          onTaskCreated={onTaskCreated}
-          onNoteCreated={onNoteCreated}
-          onOpenFullAssistant={onOpenFullAssistant}
-        />
-        <p className="mt-3 text-[11px] leading-5 text-slate-500">오른쪽 라인에 마우스를 올리면 열리고, 벗어나면 접혀요.</p>
-      </div>
-    </div>
-  );
-}
-
-function AssistantView({ assistantInput, setAssistantInput, status, calendarEvents, driveFilesData, onCalendarCreated, onTaskCreated, onNoteCreated }) {
-  const [chatMessages, setChatMessages] = useState(aiMessages);
-  const [pendingEvent, setPendingEvent] = useState(null);
-  const [assistantStatus, setAssistantStatus] = useState("idle");
-
-  function addChatMessage(role, text) {
-    setChatMessages((messages) => [...messages, { id: Date.now() + Math.random(), role, text }]);
-  }
-
-  async function runAssistantCommand(rawInput) {
-    const input = assistantInput.trim();
-    const command = rawInput?.trim() || input;
-    if (!command) return;
-
-    addChatMessage("user", command);
-    setAssistantInput("");
-    setPendingEvent(null);
-    setAssistantStatus("loading");
-
-    try {
-      const result = await executeWorkspaceAiCommand(
-        command,
-        {
-          status,
-          calendarEvents,
-          driveFilesData,
-          onCalendarCreated,
-          onTaskCreated,
-          onNoteCreated,
-        },
-        { confirmCalendar: true },
-      );
-      if (result.pendingEvent) setPendingEvent(result.pendingEvent);
-      addChatMessage("assistant", result.message);
-    } catch (error) {
-      setPendingEvent(null);
-      addChatMessage("assistant", "일정 요청을 분석하지 못했어요. 예: 내일 오후 6시에 회의 예약해줘");
-    } finally {
-      setAssistantStatus("idle");
-    }
-  }
-
-  async function handleAssistantSubmit(event) {
+  function submitMiniAssistant(event) {
     event.preventDefault();
-    await runAssistantCommand();
-  }
-
-  async function confirmCalendarEvent() {
-    if (!pendingEvent) return;
-    setAssistantStatus("loading");
-
-    try {
-      const response = await fetch("/api/calendar/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: pendingEvent.title,
-          date: pendingEvent.date,
-          startTime: pendingEvent.startTime,
-          endTime: pendingEvent.endTime,
-          description: pendingEvent.description,
-        }),
-      });
-      const { data, text } = await readApiResponse(response);
-
-      if (!response.ok) {
-        throw new Error(getApiErrorMessage(response, data, text, "일정 추가에 실패했습니다."));
-      }
-
-      addChatMessage("assistant", data?.message || "일정이 Google Calendar에 추가되었습니다.");
-      setPendingEvent(null);
-      await onCalendarCreated();
-    } catch (error) {
-      addChatMessage("assistant", getCalendarCreateErrorMessage(error));
-    } finally {
-      setAssistantStatus("idle");
-    }
-  }
-
-  function cancelCalendarEvent() {
-    setPendingEvent(null);
-    addChatMessage("assistant", "일정 추가를 취소했어요.");
+    askMiniAssistant();
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-      <GlassCard className="xl:col-span-8">
-        <CardHeader icon={MessageSquare} title="워크스페이스 채팅" action={false} />
-        <div className="space-y-4 p-5">
-          {chatMessages.map((message) => (
-            <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-lg border px-4 py-3 text-sm leading-6 ${message.role === "user" ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-50" : "border-white/10 bg-slate-950/45 text-slate-300"}`}>
-                {message.text}
-              </div>
-            </div>
-          ))}
-          {pendingEvent && (
-            <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
-              <p className="text-sm font-semibold text-white">일정 추가 확인</p>
-              <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
-                <p>제목: {pendingEvent.title}</p>
-                <p>날짜: {pendingEvent.displayDate}</p>
-                <p>시작: {pendingEvent.startTime}</p>
-                <p>종료: {pendingEvent.endTime}</p>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-slate-500">{pendingEvent.originalText}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={confirmCalendarEvent}
-                  disabled={assistantStatus === "loading"}
-                  className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {assistantStatus === "loading" ? "추가 중..." : "확인"}
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelCalendarEvent}
-                  disabled={assistantStatus === "loading"}
-                  className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  취소
-                </button>
-              </div>
-            </div>
-          )}
-          <form onSubmit={handleAssistantSubmit} className="flex gap-2 border-t border-white/10 pt-4">
-            <input
-              value={assistantInput}
-              onChange={(event) => setAssistantInput(event.target.value)}
-              placeholder="예: 내일 오후 6시에 회의 예약해줘"
-              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
-            />
-            <button type="submit" className="rounded-lg bg-cyan-300 px-4 text-slate-950 transition hover:bg-cyan-200">
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
+    <div className="flex max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/95 shadow-2xl shadow-black/50 backdrop-blur-2xl sm:max-h-[500px]">
+      <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-300"><Sparkles className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-100">미니 L-Lee AI</p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">자산, 일정, 할 일을 빠르게 물어보세요.</p>
+          </div>
         </div>
-      </GlassCard>
-      <GlassCard className="xl:col-span-4">
-        <CardHeader icon={Sparkles} title="예시 명령어" action={false} />
-        <div className="space-y-3 p-5">
-          {aiSuggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => runAssistantCommand(suggestion)}
-              disabled={assistantStatus === "loading"}
-              className="w-full rounded-lg border border-white/10 bg-white/[0.035] p-4 text-left text-sm text-slate-300 transition hover:border-cyan-300/30 hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {suggestion}
-            </button>
-          ))}
+        <button type="button" onClick={onClose} aria-label="미니 L-Lee AI 닫기" className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="workspace-scrollbar min-h-32 flex-1 overflow-y-auto p-4">
+        {miniQuestion && <p className="mb-2 text-[11px] text-slate-500">질문 · {miniQuestion}</p>}
+        <p className="whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-6 text-slate-300">{miniMessage}</p>
+      </div>
+      <div className="border-t border-white/10 p-4">
+        <div className="workspace-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
+          {suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => askMiniAssistant(suggestion)} disabled={miniStatus === "loading"} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-slate-400 transition hover:border-cyan-300/30 hover:text-cyan-200 disabled:opacity-50">{suggestion}</button>)}
         </div>
-      </GlassCard>
+        <form onSubmit={submitMiniAssistant} className="flex gap-2">
+          <input value={miniInput} onChange={(event) => setMiniInput(event.target.value)} disabled={miniStatus === "loading"} maxLength={1000} placeholder="L-Lee AI에게 질문..." className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2.5 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50 disabled:opacity-60" />
+          <button type="submit" disabled={!miniInput.trim() || miniStatus === "loading"} aria-label="미니 L-Lee AI 전송" className="rounded-xl bg-cyan-300 px-3.5 text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{miniStatus === "loading" ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+        </form>
+        <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-slate-500"><span>읽기 전용으로 답변합니다.</span><button type="button" onClick={onOpenFullAssistant} className="text-cyan-300 transition hover:text-cyan-200">L-Lee AI 열기</button></div>
+      </div>
     </div>
+  );
+}
+
+function EdgeMiniAssistant({ onOpenFullAssistant }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <>
+      {isOpen && <div className="fixed bottom-20 right-4 z-40 w-[calc(100vw-2rem)] sm:w-[360px]"><MiniAssistantBox onClose={() => setIsOpen(false)} onOpenFullAssistant={() => { setIsOpen(false); onOpenFullAssistant(); }} /></div>}
+      <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen} aria-label={isOpen ? "미니 L-Lee AI 닫기" : "미니 L-Lee AI 열기"} className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/25 bg-cyan-300 text-slate-950 shadow-2xl shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-200 sm:h-14 sm:w-14">
+        {isOpen ? <X className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+      </button>
+    </>
   );
 }
 
@@ -4259,7 +3751,6 @@ export default function Home() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [assistantInput, setAssistantInput] = useState("");
   const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [], lookup: [] });
@@ -5478,7 +4969,6 @@ export default function Home() {
         taskSaveMessage={taskSaveMessage}
       />
     ),
-    "AI Assistant": <LLeeAIView />,
     "Quick Launch": <QuickLaunchView />,
     Settings: (
       <SettingsView
@@ -5673,15 +5163,7 @@ export default function Home() {
           </div>
         </section>
       </div>
-      <EdgeMiniAssistant
-        status={status}
-        calendarEvents={calendarEvents}
-        driveFilesData={driveFilesData}
-        onCalendarCreated={() => loadCalendarEvents()}
-        onTaskCreated={createTaskFromTitle}
-        onNoteCreated={createNoteFromDraft}
-        onOpenFullAssistant={() => setActiveView("AI Assistant")}
-      />
+      <EdgeMiniAssistant onOpenFullAssistant={() => setActiveView("L-Lee AI")} />
       <NoteSecurityModal
         modal={noteSecurityModal}
         values={noteSecurityValues}
