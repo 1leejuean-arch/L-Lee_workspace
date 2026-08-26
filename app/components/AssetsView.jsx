@@ -208,12 +208,12 @@ function CategoryDonut({ categories }) {
 
 function SummaryCards({ summary }) {
   const cards = [
-    ["현재 총 자산", summary.totalBalance, "text-cyan-200"],
-    ["이번 달 수입", summary.monthlyIncome, "text-emerald-200"],
-    ["이번 달 지출", summary.monthlyExpense, "text-rose-200"],
-    ["이번 달 순수익", summary.monthlyNet, summary.monthlyNet >= 0 ? "text-cyan-200" : "text-rose-200"],
+    ["현재 총 자산", summary.totalBalance, "text-cyan-200", "시작 기준 자산 + 전체 수입 - 전체 지출"],
+    ["이번 달 수입", summary.monthlyIncome, "text-emerald-200", ""],
+    ["이번 달 지출", summary.monthlyExpense, "text-rose-200", ""],
+    ["이번 달 순수익", summary.monthlyNet, summary.monthlyNet >= 0 ? "text-cyan-200" : "text-rose-200", ""],
   ];
-  return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, tone]) => <SectionCard key={label} className="p-5"><p className="text-xs text-slate-500">{label}</p><p className={cx("mt-3 text-2xl font-semibold", tone)}>{formatWon(value)}</p></SectionCard>)}</div>;
+  return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, tone, helper]) => <SectionCard key={label} className="p-5"><p className="text-xs text-slate-500">{label}</p><p className={cx("mt-3 whitespace-nowrap text-2xl font-semibold", tone)}>{formatWon(value)}</p>{helper && <p className="mt-2 text-[11px] leading-5 text-slate-500">{helper}</p>}</SectionCard>)}</div>;
 }
 
 function TransactionForm({ draft, setDraft, categories, saving, editingId, onSubmit, onCancel, onAddCategory }) {
@@ -327,9 +327,9 @@ export default function AssetsView({ manager, authStatus }) {
       {activeTab === "dashboard" && (
         <div className="grid gap-5 xl:grid-cols-12">
           <SectionCard className="p-5 xl:col-span-4">
-            <div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-cyan-300" /><h3 className="font-semibold text-slate-100">기준 자산</h3></div>
+            <div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-cyan-300" /><h3 className="font-semibold text-slate-100">시작 기준 자산</h3></div>
             <p className="mt-2 text-sm leading-6 text-slate-400">거래 기록을 시작하기 전 보유 자산입니다.</p>
-            <form onSubmit={(event) => { event.preventDefault(); safeAction(() => saveInitialBalance(initialBalance), "기준 자산을 저장했습니다."); }} className="mt-5 space-y-3"><Field label="초기 자산"><input required type="number" min="0" value={initialBalance} onChange={(event) => setInitialBalance(event.target.value)} className={inputClass} placeholder="0" /></Field><button disabled={saving || status === "missing"} className={cx(primaryButton, "w-full")}>{saving ? "저장 중..." : "기준 자산 저장"}</button></form>
+            <form onSubmit={(event) => { event.preventDefault(); safeAction(() => saveInitialBalance(initialBalance), "시작 기준 자산을 저장했습니다."); }} className="mt-5 space-y-3"><Field label="시작 기준 자산"><input required type="number" min="0" value={initialBalance} onChange={(event) => setInitialBalance(event.target.value)} className={inputClass} placeholder="0" /></Field><button disabled={saving || status === "missing"} className={cx(primaryButton, "w-full")}>{saving ? "저장 중..." : "시작 기준 자산 저장"}</button></form>
           </SectionCard>
           <SectionCard className="p-5 xl:col-span-8"><div className="flex items-center justify-between"><div><h3 className="font-semibold text-slate-100">최근 6개월 흐름</h3><p className="mt-1 text-xs text-slate-500">지급완료된 거래 기준</p></div><BarChart3 className="h-5 w-5 text-cyan-300" /></div><div className="mt-5"><SixMonthChart transactions={data.transactions} selectedMonth={monthValue()} /></div></SectionCard>
           <SectionCard className="p-5 xl:col-span-5"><h3 className="font-semibold text-slate-100">이번 달 지출 비율</h3><div className="mt-5"><CategoryDonut categories={getMonthStats(data.transactions, monthValue()).categories} /></div></SectionCard>

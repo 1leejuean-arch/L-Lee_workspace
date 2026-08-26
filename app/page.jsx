@@ -20,6 +20,7 @@ import {
 } from "../lib/workspaceStorage";
 import { mockWeather } from "../lib/weatherData";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
+import AssistantActionCard from "./components/AssistantActionCard";
 import DashboardRedesign from "./components/DashboardRedesign";
 import LLeeAIView from "./components/LLeeAIView";
 import MeetingMinutesView, { useMeetingMinutes } from "./components/MeetingMinutesView";
@@ -3480,11 +3481,12 @@ function TasksView({
   );
 }
 
-function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
+function MiniAssistantBox({ onClose, onOpenFullAssistant, onActionConfirmed }) {
   const [miniInput, setMiniInput] = useState("");
   const [miniStatus, setMiniStatus] = useState("idle");
   const [miniQuestion, setMiniQuestion] = useState("");
   const [miniMessage, setMiniMessage] = useState("추천 질문을 누르거나 궁금한 내용을 입력해보세요.");
+  const [pendingAction, setPendingAction] = useState(null);
   const suggestions = ["현재 자산", "오늘 일정", "남은 할 일"];
 
   async function askMiniAssistant(rawQuestion) {
@@ -3494,8 +3496,35 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
     setMiniStatus("loading");
     setMiniQuestion(command);
     setMiniMessage("확인 중...");
+    setPendingAction(null);
 
     try {
+      const parseResponse = await fetch("/api/assistant/action/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: command }),
+      });
+      const parsed = await parseResponse.json().catch(() => ({}));
+      if (!parseResponse.ok) {
+        setMiniMessage(parsed.message || "추가 요청을 확인하지 못했습니다.");
+        setMiniInput("");
+        return;
+      }
+      if (parsed.matched) {
+        setMiniMessage(parsed.message);
+        if (parsed.requiresConfirmation) {
+          setPendingAction({
+            intent: parsed.intent,
+            preview: parsed.preview,
+            payload: parsed.confirmPayload,
+            status: "pending",
+            resultMessage: "",
+          });
+        }
+        setMiniInput("");
+        return;
+      }
+
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3508,6 +3537,28 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
       setMiniMessage("답변을 가져오지 못했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setMiniStatus("idle");
+    }
+  }
+
+  async function confirmMiniAction() {
+    if (!pendingAction || pendingAction.status === "loading") return;
+    setPendingAction((current) => ({ ...current, status: "loading" }));
+    try {
+      const response = await fetch("/api/assistant/action/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: pendingAction.intent, payload: pendingAction.payload }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        setPendingAction((current) => ({ ...current, status: "error", resultMessage: data.message || "저장하지 못했습니다. 잠시 후 다시 시도해주세요." }));
+        return;
+      }
+      setPendingAction((current) => ({ ...current, status: "success", resultMessage: data.message }));
+      setMiniMessage(data.message);
+      try { await onActionConfirmed?.(pendingAction.intent); } catch { /* 저장 결과는 유지하고 다음 새로고침에서 다시 동기화합니다. */ }
+    } catch {
+      setPendingAction((current) => ({ ...current, status: "error", resultMessage: "저장하지 못했습니다. 잠시 후 다시 시도해주세요." }));
     }
   }
 
@@ -3531,6 +3582,7 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
       <div className="workspace-scrollbar min-h-32 flex-1 overflow-y-auto p-4">
         {miniQuestion && <p className="mb-2 text-[11px] text-slate-500">질문 · {miniQuestion}</p>}
         <p className="whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-6 text-slate-300">{miniMessage}</p>
+        {pendingAction && <AssistantActionCard compact action={pendingAction} status={pendingAction.status} resultMessage={pendingAction.resultMessage} onConfirm={confirmMiniAction} onCancel={() => setPendingAction((current) => ({ ...current, status: "cancelled" }))} />}
       </div>
       <div className="border-t border-white/10 p-4">
         <div className="workspace-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
@@ -3540,17 +3592,17 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant }) {
           <input value={miniInput} onChange={(event) => setMiniInput(event.target.value)} disabled={miniStatus === "loading"} maxLength={1000} placeholder="L-Lee AI에게 질문..." className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2.5 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/50 disabled:opacity-60" />
           <button type="submit" disabled={!miniInput.trim() || miniStatus === "loading"} aria-label="미니 L-Lee AI 전송" className="rounded-xl bg-cyan-300 px-3.5 text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{miniStatus === "loading" ? <Clock3 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
         </form>
-        <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-slate-500"><span>읽기 전용으로 답변합니다.</span><button type="button" onClick={onOpenFullAssistant} className="text-cyan-300 transition hover:text-cyan-200">L-Lee AI 열기</button></div>
+        <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-slate-500"><span>추가 요청은 확인 후 저장합니다.</span><button type="button" onClick={onOpenFullAssistant} className="text-cyan-300 transition hover:text-cyan-200">L-Lee AI 열기</button></div>
       </div>
     </div>
   );
 }
 
-function EdgeMiniAssistant({ onOpenFullAssistant }) {
+function EdgeMiniAssistant({ onOpenFullAssistant, onActionConfirmed }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
     <>
-      {isOpen && <div className="fixed bottom-20 right-4 z-40 w-[calc(100vw-2rem)] sm:w-[360px]"><MiniAssistantBox onClose={() => setIsOpen(false)} onOpenFullAssistant={() => { setIsOpen(false); onOpenFullAssistant(); }} /></div>}
+      {isOpen && <div className="fixed bottom-20 right-4 z-40 w-[calc(100vw-2rem)] sm:w-[360px]"><MiniAssistantBox onClose={() => setIsOpen(false)} onActionConfirmed={onActionConfirmed} onOpenFullAssistant={() => { setIsOpen(false); onOpenFullAssistant(); }} /></div>}
       <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen} aria-label={isOpen ? "미니 L-Lee AI 닫기" : "미니 L-Lee AI 열기"} className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/25 bg-cyan-300 text-slate-950 shadow-2xl shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-200 sm:h-14 sm:w-14">
         {isOpen ? <X className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
       </button>
@@ -4852,6 +4904,13 @@ export default function Home() {
     }
   }
 
+  async function handleAssistantActionConfirmed(intent) {
+    if (intent === "create_task" || intent === "create_note") await refreshWorkspaceFromSupabase();
+    if (intent === "create_calendar_event") await loadCalendarEvents();
+    if (intent === "create_asset_transaction") await assetManager.reload();
+    if (intent === "create_meeting") await meetingManager.reload();
+  }
+
   const activeContent = {
     Dashboard: (
       <DashboardRedesign
@@ -4916,7 +4975,7 @@ export default function Home() {
     ),
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
     Assets: <AssetsView manager={assetManager} authStatus={status} />,
-    "L-Lee AI": <LLeeAIView />,
+    "L-Lee AI": <LLeeAIView onActionConfirmed={handleAssistantActionConfirmed} />,
     Meetings: <MeetingMinutesView manager={meetingManager} authStatus={status} onTasksAdded={refreshWorkspaceFromSupabase} />,
     Drive: (
       <DriveView
@@ -5172,7 +5231,7 @@ export default function Home() {
           </div>
         </section>
       </div>
-      <EdgeMiniAssistant onOpenFullAssistant={() => setActiveView("L-Lee AI")} />
+      <EdgeMiniAssistant onOpenFullAssistant={() => setActiveView("L-Lee AI")} onActionConfirmed={handleAssistantActionConfirmed} />
       <NoteSecurityModal
         modal={noteSecurityModal}
         values={noteSecurityValues}
