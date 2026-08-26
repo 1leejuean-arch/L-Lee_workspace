@@ -20,6 +20,7 @@ import {
 } from "../lib/workspaceStorage";
 import { mockWeather } from "../lib/weatherData";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
+import DashboardRedesign from "./components/DashboardRedesign";
 import LLeeAIView from "./components/LLeeAIView";
 import MeetingMinutesView, { useMeetingMinutes } from "./components/MeetingMinutesView";
 import {
@@ -4853,7 +4854,7 @@ export default function Home() {
 
   const activeContent = {
     Dashboard: (
-      <DashboardView
+      <DashboardRedesign
         tasks={tasks}
         notes={notes}
         meetings={meetingManager.meetings}
@@ -4892,6 +4893,10 @@ export default function Home() {
         onOpenWeather={() => setActiveView("Weather")}
         onOpenNotes={() => setActiveView("Notes")}
         onOpenMeetings={() => setActiveView("Meetings")}
+        onOpenCalendar={() => setActiveView("Calendar")}
+        onOpenTasks={() => setActiveView("Tasks")}
+        onOpenDrive={() => setActiveView("Drive")}
+        onOpenAI={() => setActiveView("L-Lee AI")}
         assetManager={assetManager}
         onOpenAssets={() => setActiveView("Assets")}
       />
