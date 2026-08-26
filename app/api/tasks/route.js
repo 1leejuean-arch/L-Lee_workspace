@@ -6,6 +6,7 @@ const DEFAULT_PRIORITY = "보통";
 const TASK_COLUMNS = "id,user_email,title,description,completed,priority,steps,sort_order,created_at,updated_at";
 const STEPS_TASK_COLUMNS = "id,user_email,title,completed,steps,created_at";
 const MINIMAL_TASK_COLUMNS = "id,user_email,title,completed,created_at";
+const DUPLICATE_TASK_COLUMNS = "id,user_email,title,description,completed,created_at";
 const TASKS_SCHEMA_MISSING_MESSAGE = "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
 const MAX_POSTGRES_INTEGER = 2147483647;
 
@@ -47,12 +48,19 @@ function normalizeSortOrder(sortOrder, fallback = 0) {
   return Math.trunc(value);
 }
 
+function getVisibleTaskDescription(description) {
+  return String(description || "")
+    .replace(/\s*\[회의록:[^\]\r\n]+\]\s*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function mapTaskRow(row, index = 0) {
   return {
     id: row.id,
     user_email: row.user_email || null,
     title: row.title || "",
-    description: row.description || "",
+    description: getVisibleTaskDescription(row.description),
     completed: Boolean(row.completed),
     priority: normalizePriority(row.priority),
     steps: normalizeSteps(row.steps),
@@ -134,6 +142,36 @@ function toStepsPayload(payload) {
   );
 }
 
+function getMeetingTaskMarker(sourceId) {
+  return `[회의록:${sourceId}]`;
+}
+
+async function findMeetingTaskDuplicate(supabase, userEmail, title, sourceId) {
+  let result = await supabase
+    .from("tasks")
+    .select(DUPLICATE_TASK_COLUMNS)
+    .eq("user_email", userEmail)
+    .eq("title", title)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  let usedMinimalSchema = false;
+  if (result.error && isMissingColumnError(result.error)) {
+    usedMinimalSchema = true;
+    result = await supabase
+      .from("tasks")
+      .select(MINIMAL_TASK_COLUMNS)
+      .eq("user_email", userEmail)
+      .eq("title", title)
+      .order("created_at", { ascending: false })
+      .limit(1);
+  }
+  if (result.error) throw result.error;
+  const rows = result.data || [];
+  if (usedMinimalSchema) return rows[0] || null;
+  const marker = getMeetingTaskMarker(sourceId);
+  return rows.find((task) => String(task.description || "").includes(marker)) || null;
+}
+
 export async function GET() {
   try {
     const userEmail = await getUserEmail();
@@ -181,10 +219,26 @@ export async function POST(request) {
     if (!title) return jsonError("TASK_TITLE_REQUIRED", 400);
 
     const supabase = getSupabaseServerClient();
+    const isMeetingSource = body.source === "meeting" && Boolean(body.sourceId);
+    let meetingSourceDescription = "";
+    if (isMeetingSource) {
+      const { data: meeting, error: meetingError } = await supabase
+        .from("meeting_minutes")
+        .select("id,title")
+        .eq("id", body.sourceId)
+        .eq("user_email", userEmail)
+        .maybeSingle();
+      if (meetingError) throw meetingError;
+      if (!meeting) return jsonError("MEETING_NOT_FOUND", 404);
+
+      const duplicate = await findMeetingTaskDuplicate(supabase, userEmail, title, body.sourceId);
+      if (duplicate) return Response.json({ task: mapTaskRow(duplicate), duplicate: true });
+      meetingSourceDescription = `회의록에서 추출됨: ${meeting.title}\n${getMeetingTaskMarker(body.sourceId)}`;
+    }
     const payload = {
       user_email: userEmail,
       title,
-      description: String(body.description || "").trim(),
+      description: meetingSourceDescription || String(body.description || "").trim(),
       completed: Boolean(body.completed),
       priority: normalizePriority(body.priority),
       steps: normalizeSteps(body.steps),
@@ -202,7 +256,7 @@ export async function POST(request) {
     }
 
     if (result.error) throw result.error;
-    return Response.json({ task: mapTaskRow(result.data) });
+    return Response.json({ task: mapTaskRow(result.data), duplicate: false });
   } catch (error) {
     logSupabaseQueryError("Tasks POST failed", error);
     return jsonError(getSupabaseErrorCode(error), 500);

@@ -736,12 +736,16 @@ function normalizeTaskSteps(steps) {
 
 function normalizeTask(task, index = 0) {
   const sortOrder = Number(task?.sort_order);
+  const visibleDescription = String(task?.description || "")
+    .replace(/\s*\[회의록:[^\]\r\n]+\]\s*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
   return {
     ...task,
     id: task?.id || `local-${Date.now()}-${index}`,
     title: String(task?.title || "").trim(),
-    description: task?.description || "",
+    description: visibleDescription,
     completed: Boolean(task?.completed),
     priority: normalizePriority(task?.priority),
     steps: normalizeTaskSteps(task?.steps),
@@ -4908,7 +4912,7 @@ export default function Home() {
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
     Assets: <AssetsView manager={assetManager} authStatus={status} />,
     "L-Lee AI": <LLeeAIView />,
-    Meetings: <MeetingMinutesView manager={meetingManager} authStatus={status} />,
+    Meetings: <MeetingMinutesView manager={meetingManager} authStatus={status} onTasksAdded={refreshWorkspaceFromSupabase} />,
     Drive: (
       <DriveView
         files={driveFilesData}

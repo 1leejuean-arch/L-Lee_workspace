@@ -15,7 +15,13 @@ import { LOCAL_MODE_LIMIT_MESSAGE, classifyLocalQuestion, createLocalAnswer } fr
 
 export const dynamic = "force-dynamic";
 
-const READ_ONLY_MESSAGE = "현재 L-Lee AI 1차 버전은 데이터 조회와 요약만 가능합니다. 추가/수정 기능은 다음 단계에서 연결할 수 있습니다.";
+const READ_ONLY_MESSAGE = "현재 L-Lee AI 채팅은 데이터 조회와 요약만 가능합니다. 회의록에서 추출한 할 일은 회의록 화면에서 확인 후 추가할 수 있습니다.";
+const MEETING_TASK_NOTICE = "회의록 화면에서 확인 후 할 일로 추가할 수 있습니다.";
+
+function withMeetingTaskNotice(answer, intent) {
+  if (!["meetings_summary", "meetings_action_items"].includes(intent) || String(answer).includes(MEETING_TASK_NOTICE)) return answer;
+  return `${String(answer).trim()}\n\n${MEETING_TASK_NOTICE}`;
+}
 
 function stripCodeFence(text) {
   return String(text || "").replace(/^```(?:text|markdown)?\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -117,7 +123,7 @@ export async function POST(request) {
       const hasVerifiedLocalAnswer = localQuestion.intent !== "unsupported";
       const geminiSummary = hasVerifiedLocalAnswer ? { verifiedAnswer: localAnswer } : summaries;
       const answer = await askGemini(message, geminiSummary, hasVerifiedLocalAnswer ? localAnswer : "");
-      return NextResponse.json({ answer, mode: "gemini" });
+      return NextResponse.json({ answer: withMeetingTaskNotice(answer, localQuestion.intent), mode: "gemini" });
     } catch (error) {
       if (localQuestion.intent !== "unsupported") {
         console.warn("Gemini answer enhancement failed; using local answer", { code: error?.code, message: error?.message });

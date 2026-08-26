@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
+  Check,
   Clock3,
   Eye,
   LoaderCircle,
@@ -11,6 +12,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Tag,
   Trash2,
   Users,
@@ -186,7 +188,7 @@ function DetailSection({ title, value }) {
   return <section><h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300/80">{title}</h4><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-300">{value || "기록된 내용이 없습니다."}</p></section>;
 }
 
-export default function MeetingMinutesView({ manager, authStatus }) {
+export default function MeetingMinutesView({ manager, authStatus, onTasksAdded }) {
   const { meetings, status, error, save, remove, reload } = manager;
   const [draft, setDraft] = useState(emptyDraft);
   const [formStatus, setFormStatus] = useState("idle");
@@ -199,6 +201,14 @@ export default function MeetingMinutesView({ manager, authStatus }) {
   const [editDraft, setEditDraft] = useState(emptyDraft);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteStatus, setDeleteStatus] = useState("idle");
+  const [analysisTarget, setAnalysisTarget] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisStatus, setAnalysisStatus] = useState("idle");
+  const [analysisError, setAnalysisError] = useState("");
+  const [selectedActions, setSelectedActions] = useState(new Set());
+  const [addedActions, setAddedActions] = useState(new Set());
+  const [taskAddStatus, setTaskAddStatus] = useState("idle");
+  const [taskAddMessage, setTaskAddMessage] = useState("");
 
   const tags = useMemo(() => [...new Set(meetings.map((meeting) => meeting.tag).filter(Boolean))].sort(), [meetings]);
   const filteredMeetings = useMemo(() => {
@@ -257,6 +267,92 @@ export default function MeetingMinutesView({ manager, authStatus }) {
     setDeleteStatus("idle");
   }
 
+  function actionKey(meetingId, title) {
+    return `${meetingId}:${String(title || "").trim().toLocaleLowerCase()}`;
+  }
+
+  async function analyzeMeeting(meeting) {
+    setAnalysisTarget(meeting);
+    setAnalysisResult(null);
+    setAnalysisStatus("loading");
+    setAnalysisError("");
+    setTaskAddStatus("idle");
+    setTaskAddMessage("");
+    try {
+      const response = await fetch("/api/meetings/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meetingId: meeting.id }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.message || "회의록을 분석하지 못했습니다.");
+      const result = {
+        summary: data.summary || "기록된 회의 내용이 없습니다.",
+        decisions: Array.isArray(data.decisions) ? data.decisions : [],
+        actionItems: Array.isArray(data.actionItems) ? data.actionItems : [],
+        mode: data.mode || "local",
+      };
+      setAnalysisResult(result);
+      setSelectedActions(new Set(result.actionItems.map((item) => actionKey(meeting.id, item.title)).filter((key) => !addedActions.has(key))));
+      setAnalysisStatus("ready");
+    } catch {
+      setAnalysisStatus("error");
+      setAnalysisError("회의록을 분석하지 못했습니다.");
+    }
+  }
+
+  function toggleAnalysisAction(key) {
+    setSelectedActions((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function addSelectedTasks() {
+    if (!analysisTarget || !analysisResult || taskAddStatus === "loading") return;
+    const targets = analysisResult.actionItems.filter((item) => {
+      const key = actionKey(analysisTarget.id, item.title);
+      return selectedActions.has(key) && !addedActions.has(key);
+    });
+    if (!targets.length) return;
+    setTaskAddStatus("loading");
+    setTaskAddMessage("");
+    const results = await Promise.allSettled(targets.map(async (item) => {
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: item.title,
+          priority: item.priority === "high" ? "높음" : item.priority === "low" ? "낮음" : "보통",
+          source: "meeting",
+          sourceId: analysisTarget.id,
+        }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "TASK_CREATE_FAILED");
+      return { key: actionKey(analysisTarget.id, item.title), duplicate: Boolean(data.duplicate) };
+    }));
+    const successes = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+    if (successes.length) {
+      setAddedActions((current) => new Set([...current, ...successes.map((result) => result.key)]));
+      setSelectedActions((current) => {
+        const next = new Set(current);
+        successes.forEach((result) => next.delete(result.key));
+        return next;
+      });
+      try { await onTasksAdded?.(); } catch { /* The task API succeeded; the next workspace refresh can retry. */ }
+    }
+    if (successes.length !== targets.length) {
+      setTaskAddStatus("error");
+      setTaskAddMessage("선택한 할 일을 추가하지 못했습니다.");
+    } else {
+      setTaskAddStatus("success");
+      const duplicateCount = successes.filter((result) => result.duplicate).length;
+      setTaskAddMessage(duplicateCount ? "이미 추가된 항목은 중복 생성하지 않았습니다." : "선택한 할 일을 추가했습니다.");
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
       <section className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.045] shadow-lg shadow-black/10 xl:col-span-5">
@@ -289,6 +385,7 @@ export default function MeetingMinutesView({ manager, authStatus }) {
                 <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{preview(meeting.content)}</p>
               </button>
               <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-white/10 pt-3">
+                <button type="button" onClick={() => analyzeMeeting(meeting)} className="flex items-center gap-1.5 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs text-cyan-200 hover:bg-cyan-300/10"><Sparkles className="h-3.5 w-3.5" />AI로 정리</button>
                 <button type="button" onClick={() => openDetail(meeting)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/10"><Eye className="h-3.5 w-3.5" />자세히</button>
                 <button type="button" onClick={() => openEdit(meeting)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/10"><Pencil className="h-3.5 w-3.5" />수정</button>
                 <button type="button" onClick={() => requestDelete(meeting)} className="flex items-center gap-1.5 rounded-lg border border-rose-300/15 px-3 py-2 text-xs text-rose-200 hover:bg-rose-400/10"><Trash2 className="h-3.5 w-3.5" />삭제</button>
@@ -308,7 +405,34 @@ export default function MeetingMinutesView({ manager, authStatus }) {
                 <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-4 sm:grid-cols-2"><p className="flex items-center gap-2 text-sm text-slate-300"><CalendarDays className="h-4 w-4 text-cyan-300" />{koreaDateLabel(selected.meetingDate)}</p><p className="flex items-center gap-2 text-sm text-slate-300"><Clock3 className="h-4 w-4 text-cyan-300" />{timeRange(selected)}</p><p className="flex items-center gap-2 text-sm text-slate-300"><Users className="h-4 w-4 text-cyan-300" />{selected.attendees || "참석자 미입력"}</p><p className="flex items-center gap-2 text-sm text-slate-300"><MapPin className="h-4 w-4 text-cyan-300" />{selected.location || "장소/방식 미입력"}</p>{selected.tag && <p className="flex items-center gap-2 text-sm text-slate-300"><Tag className="h-4 w-4 text-cyan-300" />{selected.tag}</p>}</div>
                 <DetailSection title="회의 내용" value={selected.content} /><DetailSection title="결정 사항" value={selected.decisions} /><DetailSection title="할 일 / 후속 작업" value={selected.actionItems} />
                 <div className="border-t border-white/10 pt-4 text-xs leading-6 text-slate-500"><p>생성일: {dateTimeLabel(selected.createdAt)}</p><p>수정일: {dateTimeLabel(selected.updatedAt)}</p></div>
-                <div className="flex justify-end gap-2"><button type="button" onClick={() => requestDelete(selected)} className="rounded-lg border border-rose-300/20 px-4 py-2.5 text-sm text-rose-200 hover:bg-rose-400/10">삭제</button><button type="button" onClick={() => openEdit(selected)} className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-cyan-200">수정</button></div>
+                <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => analyzeMeeting(selected)} className="flex items-center gap-2 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-4 py-2.5 text-sm text-cyan-200 hover:bg-cyan-300/10"><Sparkles className="h-4 w-4" />AI로 정리</button><button type="button" onClick={() => requestDelete(selected)} className="rounded-lg border border-rose-300/20 px-4 py-2.5 text-sm text-rose-200 hover:bg-rose-400/10">삭제</button><button type="button" onClick={() => openEdit(selected)} className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-cyan-200">수정</button></div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {analysisTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && analysisStatus !== "loading" && taskAddStatus !== "loading") setAnalysisTarget(null); }}>
+          <div className="workspace-scrollbar max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-cyan-300/20 bg-slate-950/95 shadow-2xl shadow-black/60">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/10 bg-slate-950/95 p-5 backdrop-blur-xl">
+              <div className="flex min-w-0 items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-300"><Sparkles className="h-5 w-5" /></span><div className="min-w-0"><p className="text-xs font-medium uppercase tracking-[0.16em] text-cyan-300/80">L-Lee AI 회의록 정리</p><h3 className="mt-1 truncate text-lg font-semibold text-white">{analysisTarget.title}</h3></div></div>
+              <button type="button" onClick={() => setAnalysisTarget(null)} disabled={analysisStatus === "loading" || taskAddStatus === "loading"} aria-label="AI 분석 닫기" className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-40"><X className="h-5 w-5" /></button>
+            </div>
+
+            {analysisStatus === "loading" && <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-sm text-slate-400"><LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" /><p>회의록을 정리하는 중...</p></div>}
+            {analysisStatus === "error" && <div className="p-5"><p className="rounded-xl border border-rose-300/20 bg-rose-400/10 p-4 text-sm text-rose-100">{analysisError || "회의록을 분석하지 못했습니다."}</p></div>}
+            {analysisStatus === "ready" && analysisResult && (
+              <div className="space-y-6 p-5">
+                <div className="flex justify-end"><span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.07] px-3 py-1 text-[11px] text-cyan-200">{analysisResult.mode === "gemini" ? "Gemini 보강" : "무료 로컬 모드"}</span></div>
+                <section className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300/80">핵심 요약</h4><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-300">{analysisResult.summary}</p></section>
+                <section><h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300/80">결정 사항</h4>{analysisResult.decisions.length ? <ul className="mt-3 space-y-2">{analysisResult.decisions.map((decision, index) => <li key={`${decision}-${index}`} className="flex gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm leading-6 text-slate-300"><Check className="mt-1 h-4 w-4 shrink-0 text-cyan-300" /><span>{decision}</span></li>)}</ul> : <p className="mt-3 text-sm text-slate-500">정리할 결정 사항이 없습니다.</p>}</section>
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-300/80">추출된 할 일</h4>
+                  {analysisResult.actionItems.length ? <div className="mt-3 space-y-2">{analysisResult.actionItems.map((item, index) => { const key = actionKey(analysisTarget.id, item.title); const added = addedActions.has(key); return <label key={`${key}-${index}`} className={`flex items-start gap-3 rounded-xl border p-3 transition ${added ? "border-emerald-300/20 bg-emerald-300/[0.07]" : "border-white/10 bg-white/[0.03] hover:border-cyan-300/20"}`}><input type="checkbox" checked={added || selectedActions.has(key)} disabled={added || taskAddStatus === "loading"} onChange={() => toggleAnalysisAction(key)} className="mt-1 h-4 w-4 rounded border-white/20 accent-cyan-300" /><span className="min-w-0 flex-1 text-sm leading-6 text-slate-300">{item.title}</span><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] ${item.priority === "high" ? "bg-rose-400/10 text-rose-200" : item.priority === "low" ? "bg-slate-400/10 text-slate-400" : "bg-cyan-300/10 text-cyan-200"}`}>{added ? "추가됨" : item.priority === "high" ? "높음" : item.priority === "low" ? "낮음" : "보통"}</span></label>; })}</div> : <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">추출할 할 일이 없습니다. 회의록의 후속 작업 항목을 작성해보세요.</p>}
+                </section>
+                {taskAddMessage && <p className={`rounded-xl border p-3 text-sm ${taskAddStatus === "error" ? "border-rose-300/20 bg-rose-400/10 text-rose-100" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"}`}>{taskAddMessage}</p>}
+                <div className="flex flex-col-reverse gap-2 border-t border-white/10 pt-4 sm:flex-row sm:justify-end"><button type="button" onClick={() => setAnalysisTarget(null)} disabled={taskAddStatus === "loading"} className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/10 disabled:opacity-50">닫기</button><button type="button" onClick={addSelectedTasks} disabled={taskAddStatus === "loading" || !analysisResult.actionItems.some((item) => { const key = actionKey(analysisTarget.id, item.title); return selectedActions.has(key) && !addedActions.has(key); })} className="flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{taskAddStatus === "loading" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}{taskAddStatus === "loading" ? "할 일 추가 중..." : "선택한 할 일을 할 일 목록에 추가"}</button></div>
               </div>
             )}
           </div>

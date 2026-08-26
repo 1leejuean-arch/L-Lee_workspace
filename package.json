@@ -8,7 +8,8 @@
     "start": "next start -p 3002",
     "lint": "next lint",
     "clean": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path .next) { Remove-Item -Recurse -Force .next }\"",
-    "dev:clean": "npm run clean && npm run dev"
+    "dev:clean": "npm run clean && npm run dev",
+    "build:clean": "npm run clean && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
