@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, LoaderCircle, LockKeyhole, Send, Sparkles, User } from "lucide-react";
 import AssistantActionCard from "./AssistantActionCard";
+import { isLikelyCreateRequest } from "../../lib/assistantRequestIntent";
 
 const suggestions = ["이번 달 지출 알려줘", "오늘 일정 알려줘", "남은 할 일 알려줘", "현재 자산 알려줘"];
 
@@ -27,31 +28,45 @@ export default function LLeeAIView({ onActionConfirmed }) {
     setInput("");
     setLoading(true);
     try {
-      const parseResponse = await fetch("/api/assistant/action/parse", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
-      });
-      const parsed = await parseResponse.json().catch(() => ({}));
-      if (!parseResponse.ok) {
-        setMessages((current) => [...current, {
-          id: `${requestId}-assistant`, role: "assistant",
-          text: parsed.message || "추가 요청을 확인하지 못했습니다.", error: true,
-        }]);
-        return;
-      }
-      if (parsed.matched) {
-        setMessages((current) => [...current, {
-          id: `${requestId}-assistant`,
-          role: "assistant",
-          text: parsed.message,
-          action: parsed.requiresConfirmation ? {
-            intent: parsed.intent,
-            preview: parsed.preview,
-            payload: parsed.confirmPayload,
-            status: "pending",
-            resultMessage: "",
-          } : null,
-        }]);
-        return;
+      if (isLikelyCreateRequest(message)) {
+        let parseResponse;
+        let parsed = {};
+        try {
+          parseResponse = await fetch("/api/assistant/action/parse", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
+          });
+          parsed = await parseResponse.json().catch(() => ({}));
+        } catch {
+          setMessages((current) => [...current, {
+            id: `${requestId}-assistant`, role: "assistant",
+            text: "추가할 내용을 정확히 파악하지 못했습니다. 예: 8월 27일 수행평가 할 일 추가해줘", error: true,
+          }]);
+          return;
+        }
+
+        if (!parseResponse.ok) {
+          setMessages((current) => [...current, {
+            id: `${requestId}-assistant`, role: "assistant",
+            text: "추가할 내용을 정확히 파악하지 못했습니다. 예: 8월 27일 수행평가 할 일 추가해줘", error: true,
+          }]);
+          return;
+        }
+
+        if (parsed.matched && parsed.requiresConfirmation) {
+          setMessages((current) => [...current, {
+            id: `${requestId}-assistant`,
+            role: "assistant",
+            text: parsed.message,
+            action: {
+              intent: parsed.intent,
+              preview: parsed.preview,
+              payload: parsed.confirmPayload,
+              status: "pending",
+              resultMessage: "",
+            },
+          }]);
+          return;
+        }
       }
 
       const response = await fetch("/api/assistant", {
@@ -73,6 +88,9 @@ export default function LLeeAIView({ onActionConfirmed }) {
   }
 
   async function confirmAction(messageId, action) {
+    const failureMessage = action.intent === "create_task"
+      ? "할 일을 추가하지 못했습니다. 잠시 후 다시 시도해주세요."
+      : "저장하지 못했습니다. 잠시 후 다시 시도해주세요.";
     setMessages((current) => current.map((message) => message.id === messageId ? { ...message, action: { ...message.action, status: "loading" } } : message));
     try {
       const response = await fetch("/api/assistant/action/confirm", {
@@ -84,7 +102,7 @@ export default function LLeeAIView({ onActionConfirmed }) {
       const status = response.ok && data.success ? "success" : "error";
       setMessages((current) => current.map((message) => message.id === messageId ? {
         ...message,
-        action: { ...message.action, status, resultMessage: data.message || "저장하지 못했습니다. 잠시 후 다시 시도해주세요." },
+        action: { ...message.action, status, resultMessage: status === "success" ? data.message : (data.message || failureMessage) },
       } : message));
       if (status === "success") {
         try { await onActionConfirmed?.(action.intent); } catch { /* 저장은 완료되었고 다음 화면 진입 시 다시 불러옵니다. */ }
@@ -92,7 +110,7 @@ export default function LLeeAIView({ onActionConfirmed }) {
     } catch {
       setMessages((current) => current.map((message) => message.id === messageId ? {
         ...message,
-        action: { ...message.action, status: "error", resultMessage: "저장하지 못했습니다. 잠시 후 다시 시도해주세요." },
+        action: { ...message.action, status: "error", resultMessage: failureMessage },
       } : message));
     }
   }

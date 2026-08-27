@@ -18,6 +18,7 @@ import {
   updateTaskStepsInSupabase,
   updateTaskInSupabase,
 } from "../lib/workspaceStorage";
+import { isLikelyCreateRequest } from "../lib/assistantRequestIntent";
 import { mockWeather } from "../lib/weatherData";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
 import AssistantActionCard from "./components/AssistantActionCard";
@@ -3499,20 +3500,30 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant, onActionConfirmed }) {
     setPendingAction(null);
 
     try {
-      const parseResponse = await fetch("/api/assistant/action/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: command }),
-      });
-      const parsed = await parseResponse.json().catch(() => ({}));
-      if (!parseResponse.ok) {
-        setMiniMessage(parsed.message || "추가 요청을 확인하지 못했습니다.");
-        setMiniInput("");
-        return;
-      }
-      if (parsed.matched) {
-        setMiniMessage(parsed.message);
-        if (parsed.requiresConfirmation) {
+      if (isLikelyCreateRequest(command)) {
+        let parseResponse;
+        let parsed = {};
+        try {
+          parseResponse = await fetch("/api/assistant/action/parse", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: command }),
+          });
+          parsed = await parseResponse.json().catch(() => ({}));
+        } catch {
+          setMiniMessage("추가할 내용을 정확히 파악하지 못했습니다. 예: 8월 27일 수행평가 할 일 추가해줘");
+          setMiniInput("");
+          return;
+        }
+
+        if (!parseResponse.ok) {
+          setMiniMessage("추가할 내용을 정확히 파악하지 못했습니다. 예: 8월 27일 수행평가 할 일 추가해줘");
+          setMiniInput("");
+          return;
+        }
+
+        if (parsed.matched && parsed.requiresConfirmation) {
+          setMiniMessage(parsed.message);
           setPendingAction({
             intent: parsed.intent,
             preview: parsed.preview,
@@ -3520,9 +3531,9 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant, onActionConfirmed }) {
             status: "pending",
             resultMessage: "",
           });
+          setMiniInput("");
+          return;
         }
-        setMiniInput("");
-        return;
       }
 
       const response = await fetch("/api/assistant", {
@@ -3542,6 +3553,9 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant, onActionConfirmed }) {
 
   async function confirmMiniAction() {
     if (!pendingAction || pendingAction.status === "loading") return;
+    const failureMessage = pendingAction.intent === "create_task"
+      ? "할 일을 추가하지 못했습니다. 잠시 후 다시 시도해주세요."
+      : "저장하지 못했습니다. 잠시 후 다시 시도해주세요.";
     setPendingAction((current) => ({ ...current, status: "loading" }));
     try {
       const response = await fetch("/api/assistant/action/confirm", {
@@ -3551,14 +3565,14 @@ function MiniAssistantBox({ onClose, onOpenFullAssistant, onActionConfirmed }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success) {
-        setPendingAction((current) => ({ ...current, status: "error", resultMessage: data.message || "저장하지 못했습니다. 잠시 후 다시 시도해주세요." }));
+        setPendingAction((current) => ({ ...current, status: "error", resultMessage: data.message || failureMessage }));
         return;
       }
       setPendingAction((current) => ({ ...current, status: "success", resultMessage: data.message }));
       setMiniMessage(data.message);
       try { await onActionConfirmed?.(pendingAction.intent); } catch { /* 저장 결과는 유지하고 다음 새로고침에서 다시 동기화합니다. */ }
     } catch {
-      setPendingAction((current) => ({ ...current, status: "error", resultMessage: "저장하지 못했습니다. 잠시 후 다시 시도해주세요." }));
+      setPendingAction((current) => ({ ...current, status: "error", resultMessage: failureMessage }));
     }
   }
 
@@ -3755,20 +3769,12 @@ function SummaryGrid({ completedCount, taskTotal, noteTotal, todayEventTotal, dr
   );
 }
 
-function getWorkspaceStorageErrorMessage(errorCode) {
-  if (errorCode === "SUPABASE_NOT_CONFIGURED") return "Supabase 서버 환경변수가 설정되지 않았습니다.";
-  if (errorCode === "TASKS_SCHEMA_MISSING") return "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
-  if (errorCode === "SUPABASE_QUERY_FAILED") return "Supabase 데이터 조회에 실패했습니다. 서버 로그에서 테이블/권한 오류를 확인해주세요.";
-  if (errorCode === "UNAUTHORIZED") return "Google 로그인 세션을 확인하지 못했습니다.";
-  return "Google 계정과 Supabase 연결이 정상화되면 계정 기준 데이터로 다시 동기화됩니다.";
-}
-
-function WorkspaceStorageNotice({ mode, status, errorCode }) {
+function WorkspaceStorageNotice({ mode, status }) {
   if (status !== "authenticated" || mode !== "local") return null;
 
   return (
     <div className="mb-5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50">
-      임시 로컬 데이터로 표시 중입니다. {getWorkspaceStorageErrorMessage(errorCode)}
+      일부 데이터를 잠시 불러오지 못했습니다. 새로고침하면 복구될 수 있습니다.
     </div>
   );
 }
@@ -3825,6 +3831,7 @@ export default function Home() {
   const [driveDeleteMessageType, setDriveDeleteMessageType] = useState("error");
   const [workspaceStorageMode, setWorkspaceStorageMode] = useState("loading");
   const [workspaceStorageErrorCode, setWorkspaceStorageErrorCode] = useState("");
+  const [taskLoadStatus, setTaskLoadStatus] = useState("idle");
   const [clientReady, setClientReady] = useState(false);
   const [todayDate, setTodayDate] = useState(stableInitialDate);
   const [todayLabel, setTodayLabel] = useState(stableInitialDateLabel);
@@ -3945,6 +3952,7 @@ export default function Home() {
         if (!isActive) return;
         setTasks(normalizeTasks(localWorkspace.tasks));
         setNotes(localWorkspace.notes);
+        setTaskLoadStatus("ready");
         setWorkspaceStorageMode("local");
         setWorkspaceStorageErrorCode("");
         setStorageReady(true);
@@ -3952,33 +3960,52 @@ export default function Home() {
       }
 
       try {
-        let [remoteTasks, remoteNotes] = await Promise.all([
+        let [tasksResult, notesResult] = await Promise.allSettled([
           fetchTasksFromSupabase(userEmail),
           fetchNotesFromSupabase(userEmail),
         ]);
+        let remoteTasks = tasksResult.status === "fulfilled" ? tasksResult.value : [];
+        let remoteNotes = notesResult.status === "fulfilled" ? notesResult.value : [];
+        let tasksError = tasksResult.status === "rejected" ? tasksResult.reason : null;
+        let notesError = notesResult.status === "rejected" ? notesResult.reason : null;
 
         const tasksToSync = localWorkspace.pendingTasks.filter((task) => !hasMatchingTask(remoteTasks, task));
         const notesToSync = localWorkspace.pendingNotes.filter((note) => !hasMatchingNote(remoteNotes, note));
 
-        if (tasksToSync.length || notesToSync.length) {
-          await Promise.all([
-            ...tasksToSync.map((task) => createTaskInSupabase(userEmail, task)),
-            ...notesToSync.map((note) => createNoteInSupabase(userEmail, note)),
-          ]);
-          [remoteTasks, remoteNotes] = await Promise.all([
-            fetchTasksFromSupabase(userEmail),
-            fetchNotesFromSupabase(userEmail),
-          ]);
+        if (!tasksError && tasksToSync.length) {
+          try {
+            await Promise.all(tasksToSync.map((task) => createTaskInSupabase(userEmail, task)));
+            remoteTasks = await fetchTasksFromSupabase(userEmail);
+          } catch (error) {
+            tasksError = error;
+          }
+        }
+        if (!notesError && notesToSync.length) {
+          try {
+            await Promise.all(notesToSync.map((note) => createNoteInSupabase(userEmail, note)));
+            remoteNotes = await fetchNotesFromSupabase(userEmail);
+          } catch (error) {
+            notesError = error;
+          }
+        }
+
+        if (tasksError && notesError) {
+          const workspaceError = new Error("All core Supabase workspace requests failed");
+          workspaceError.code = tasksError?.code || notesError?.code || "SUPABASE_LOAD_FAILED";
+          workspaceError.tasksError = tasksError;
+          workspaceError.notesError = notesError;
+          throw workspaceError;
         }
 
         if (!isActive) return;
-        setTasks(normalizeTasks(remoteTasks));
-        setNotes(remoteNotes);
+        setTasks(tasksError ? [] : normalizeTasks(remoteTasks));
+        setNotes(notesError ? localWorkspace.notes : remoteNotes);
+        setTaskLoadStatus(tasksError ? "error" : "ready");
         setUnlockedNotes({});
         setWorkspaceStorageMode("supabase");
-        setWorkspaceStorageErrorCode("");
-        window.localStorage.removeItem(TASKS_KEY);
-        window.localStorage.removeItem(NOTES_KEY);
+        setWorkspaceStorageErrorCode(tasksError ? "TASKS_PARTIAL_FAILURE" : notesError ? "NOTES_PARTIAL_FAILURE" : "");
+        if (!tasksError) window.localStorage.removeItem(TASKS_KEY);
+        if (!notesError) window.localStorage.removeItem(NOTES_KEY);
       } catch (error) {
         console.warn("Supabase workspace load failed, using localStorage fallback:", {
           code: error?.code,
@@ -3988,6 +4015,7 @@ export default function Home() {
         if (!isActive) return;
         setTasks(normalizeTasks(localWorkspace.tasks));
         setNotes(localWorkspace.notes);
+        setTaskLoadStatus("error");
         setWorkspaceStorageMode("local");
         setWorkspaceStorageErrorCode(error?.code || error?.message || "SUPABASE_LOAD_FAILED");
       } finally {
@@ -3996,6 +4024,7 @@ export default function Home() {
     }
 
     setStorageReady(false);
+    setTaskLoadStatus("loading");
     setWorkspaceStorageMode("loading");
     setWorkspaceStorageErrorCode("");
     loadWorkspaceData();
@@ -4317,6 +4346,7 @@ export default function Home() {
     ]);
 
     setTasks(normalizeTasks(remoteTasks));
+    setTaskLoadStatus("ready");
     setNotes(remoteNotes);
     setUnlockedNotes({});
     setWorkspaceStorageMode("supabase");
@@ -4905,7 +4935,12 @@ export default function Home() {
   }
 
   async function handleAssistantActionConfirmed(intent) {
-    if (intent === "create_task" || intent === "create_note") await refreshWorkspaceFromSupabase();
+    if (intent === "create_task") {
+      const remoteTasks = await fetchTasksFromSupabase(userEmail);
+      setTasks(normalizeTasks(remoteTasks));
+      setTaskLoadStatus("ready");
+    }
+    if (intent === "create_note") await refreshWorkspaceFromSupabase();
     if (intent === "create_calendar_event") await loadCalendarEvents();
     if (intent === "create_asset_transaction") await assetManager.reload();
     if (intent === "create_meeting") await meetingManager.reload();
@@ -4918,6 +4953,7 @@ export default function Home() {
         notes={notes}
         meetings={meetingManager.meetings}
         meetingStatus={meetingManager.status}
+        taskLoadStatus={taskLoadStatus}
         completedCount={completedCount}
         toggleTask={toggleTask}
         monthDays={monthDays}
@@ -5226,7 +5262,7 @@ export default function Home() {
 
           <div className="workspace-scrollbar flex-1 overflow-y-auto p-4 md:p-8">
             <ViewTitle activeView={activeView} />
-            <WorkspaceStorageNotice mode={workspaceStorageMode} status={status} errorCode={workspaceStorageErrorCode} />
+            <WorkspaceStorageNotice mode={workspaceStorageMode} status={status} />
             {activeContent[activeView]}
           </div>
         </section>

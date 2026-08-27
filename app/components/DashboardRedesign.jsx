@@ -99,7 +99,9 @@ function ScheduleList({ events, status, calendarStatus }) {
   );
 }
 
-function TaskPreview({ tasks, onToggle, onOpenTasks }) {
+function TaskPreview({ tasks, loadStatus, onToggle, onOpenTasks }) {
+  if (loadStatus === "loading") return <p className="p-5 text-sm text-slate-500">할 일을 불러오는 중...</p>;
+  if (loadStatus === "error") return <p className="p-5 text-sm text-amber-200">할 일 데이터를 잠시 불러오지 못했습니다.</p>;
   if (!tasks.length) return <p className="p-5 text-sm text-slate-500">남은 할 일이 없습니다. 가볍게 하루를 시작해보세요.</p>;
   return (
     <div className="space-y-2 p-5">
@@ -180,6 +182,7 @@ export default function DashboardRedesign({
   notes,
   meetings,
   meetingStatus,
+  taskLoadStatus,
   toggleTask,
   todayDate,
   session,
@@ -212,6 +215,7 @@ export default function DashboardRedesign({
   const displayName = session?.user?.name?.trim()?.split(/\s+/)[0] || "주언";
   const todayLabel = formatDashboardDate(todayDate);
   const questions = ["이번 달 지출 알려줘", "오늘 일정 알려줘", "남은 할 일 알려줘", "최근 회의록 요약해줘"];
+  const taskCountLabel = taskLoadStatus === "error" ? "확인 중" : `${activeTasks.length}개`;
 
   return (
     <div className="space-y-5">
@@ -222,7 +226,7 @@ export default function DashboardRedesign({
           <div>
             <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-medium text-cyan-200">PERSONAL OS</span><span className="text-xs text-slate-500">{todayLabel}</span></div>
             <h3 className="mt-5 text-2xl font-semibold tracking-tight text-white sm:text-3xl">좋은 하루예요, {displayName}님.</h3>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400 sm:text-base">오늘은 일정 {todayEvents.length}개, 남은 할 일 {activeTasks.length}개, 이번 달 지출 {formatWon(assetSummary.monthlyExpense)}이 있어요.</p>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400 sm:text-base">오늘은 일정 {todayEvents.length}개, 남은 할 일 {taskCountLabel}, 이번 달 지출 {formatWon(assetSummary.monthlyExpense)}이 있어요.</p>
             <div className="mt-6 flex flex-wrap gap-2">
               <button type="button" onClick={onOpenAI} className="flex items-center gap-2 rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200"><Sparkles className="h-4 w-4" />L-Lee AI 열기</button>
               <button type="button" onClick={onOpenTasks} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/10 hover:text-white">오늘 정리하기 <ChevronRight className="h-4 w-4" /></button>
@@ -239,14 +243,14 @@ export default function DashboardRedesign({
         <MetricCard icon={Wallet} label="현재 자산" value={formatWon(assetSummary.totalBalance)} helper="자산관리" tone="text-cyan-200" onClick={onOpenAssets} />
         <MetricCard icon={CreditCard} label="이번 달 지출" value={formatWon(assetSummary.monthlyExpense)} helper="월간 사용 금액" tone="text-rose-200" onClick={onOpenAssets} />
         <MetricCard icon={CalendarDays} label="오늘 일정" value={`${todayEvents.length}개`} helper="Google Calendar" tone="text-violet-200" onClick={onOpenCalendar} />
-        <MetricCard icon={CheckSquare} label="남은 할 일" value={`${activeTasks.length}개`} helper={`전체 ${tasks.length}개`} tone="text-emerald-200" onClick={onOpenTasks} />
+        <MetricCard icon={CheckSquare} label="남은 할 일" value={taskLoadStatus === "error" ? "—" : `${activeTasks.length}개`} helper={taskLoadStatus === "error" ? "잠시 불러오지 못함" : `전체 ${tasks.length}개`} tone="text-emerald-200" onClick={onOpenTasks} />
       </section>
 
       <section>
         <div className="mb-3 flex items-end justify-between gap-3 px-1"><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-cyan-300/70">Today flow</p><h3 className="mt-1 text-lg font-semibold text-white">오늘의 흐름</h3></div><span className="hidden text-xs text-slate-500 sm:block">지금 필요한 정보만 모았어요</span></div>
         <div className="grid gap-4 xl:grid-cols-3">
           <Panel><PanelHeader icon={CalendarDays} title="오늘 일정" action={<TextAction onClick={onOpenCalendar}>캘린더 열기</TextAction>} /><ScheduleList events={todayEvents} status={status} calendarStatus={calendarStatus} /></Panel>
-          <Panel><PanelHeader icon={CheckSquare} title="남은 할 일" action={<TextAction onClick={onOpenTasks}>전체 보기</TextAction>} /><TaskPreview tasks={activeTasks} onToggle={toggleTask} onOpenTasks={onOpenTasks} /></Panel>
+          <Panel><PanelHeader icon={CheckSquare} title="남은 할 일" action={<TextAction onClick={onOpenTasks}>전체 보기</TextAction>} /><TaskPreview tasks={activeTasks} loadStatus={taskLoadStatus} onToggle={toggleTask} onOpenTasks={onOpenTasks} /></Panel>
           <Panel><PanelHeader icon={ClipboardList} title="최근 기록" /><RecentRecords meetings={meetings} notes={notes} meetingStatus={meetingStatus} onOpenMeetings={onOpenMeetings} onOpenNotes={onOpenNotes} /></Panel>
         </div>
       </section>

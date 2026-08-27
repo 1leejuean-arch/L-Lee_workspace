@@ -1,12 +1,13 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
 import { getSupabaseServerClient } from "../../../lib/supabaseServer";
+import { createTaskForUser } from "../../../lib/taskPersistence";
+import { queryWithTemporaryAuthRetry } from "../../../lib/supabaseRetry";
 
 const DEFAULT_PRIORITY = "보통";
 const TASK_COLUMNS = "id,user_email,title,description,completed,priority,steps,sort_order,created_at,updated_at";
 const STEPS_TASK_COLUMNS = "id,user_email,title,completed,steps,created_at";
 const MINIMAL_TASK_COLUMNS = "id,user_email,title,completed,created_at";
-const DUPLICATE_TASK_COLUMNS = "id,user_email,title,description,completed,created_at";
 const TASKS_SCHEMA_MISSING_MESSAGE = "Supabase tasks 테이블에 필요한 컬럼이 아직 없습니다.";
 const MAX_POSTGRES_INTEGER = 2147483647;
 
@@ -130,81 +131,57 @@ function buildTaskPayload(body, { includeTitle = false } = {}) {
   return payload;
 }
 
-function toLegacyPayload(payload) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => ["user_email", "title", "completed"].includes(key)),
-  );
-}
-
 function toStepsPayload(payload) {
   return Object.fromEntries(
     Object.entries(payload).filter(([key]) => ["user_email", "title", "completed", "steps"].includes(key)),
   );
 }
 
-function getMeetingTaskMarker(sourceId) {
-  return `[회의록:${sourceId}]`;
-}
-
-async function findMeetingTaskDuplicate(supabase, userEmail, title, sourceId) {
+async function queryTasks(supabase, userEmail) {
   let result = await supabase
     .from("tasks")
-    .select(DUPLICATE_TASK_COLUMNS)
+    .select(TASK_COLUMNS)
     .eq("user_email", userEmail)
-    .eq("title", title)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  let usedMinimalSchema = false;
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
   if (result.error && isMissingColumnError(result.error)) {
-    usedMinimalSchema = true;
+    result = await supabase
+      .from("tasks")
+      .select(STEPS_TASK_COLUMNS)
+      .eq("user_email", userEmail)
+      .order("created_at", { ascending: false });
+  }
+
+  if (result.error && isMissingColumnError(result.error)) {
     result = await supabase
       .from("tasks")
       .select(MINIMAL_TASK_COLUMNS)
       .eq("user_email", userEmail)
-      .eq("title", title)
-      .order("created_at", { ascending: false })
-      .limit(1);
+      .order("created_at", { ascending: false });
   }
-  if (result.error) throw result.error;
-  const rows = result.data || [];
-  if (usedMinimalSchema) return rows[0] || null;
-  const marker = getMeetingTaskMarker(sourceId);
-  return rows.find((task) => String(task.description || "").includes(marker)) || null;
+
+  return result;
 }
 
 export async function GET() {
+  let retriedTemporaryAuthError = false;
   try {
     const userEmail = await getUserEmail();
     if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const supabase = getSupabaseServerClient();
-    let result = await supabase
-      .from("tasks")
-      .select(TASK_COLUMNS)
-      .eq("user_email", userEmail)
-      .order("sort_order", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: false });
-
-    if (result.error && isMissingColumnError(result.error)) {
-      result = await supabase
-        .from("tasks")
-        .select(STEPS_TASK_COLUMNS)
-        .eq("user_email", userEmail)
-        .order("created_at", { ascending: false });
-    }
-
-    if (result.error && isMissingColumnError(result.error)) {
-      result = await supabase
-        .from("tasks")
-        .select(MINIMAL_TASK_COLUMNS)
-        .eq("user_email", userEmail)
-        .order("created_at", { ascending: false });
-    }
+    const attempt = await queryWithTemporaryAuthRetry(
+      () => queryTasks(supabase, userEmail),
+      { onRetry: () => console.warn("Tasks GET temporary auth timing issue, retrying...") },
+    );
+    retriedTemporaryAuthError = attempt.retried;
+    const result = attempt.result;
 
     if (result.error) throw result.error;
     return Response.json({ tasks: (result.data || []).map(mapTaskRow) });
   } catch (error) {
-    logSupabaseQueryError("Tasks GET failed", error);
+    logSupabaseQueryError(retriedTemporaryAuthError ? "Tasks GET failed after retry" : "Tasks GET failed", error);
     return jsonError(getSupabaseErrorCode(error), 500);
   }
 }
@@ -215,51 +192,12 @@ export async function POST(request) {
     if (!userEmail) return jsonError("UNAUTHORIZED", 401);
 
     const body = await request.json().catch(() => ({}));
-    const title = String(body.title || "").trim();
-    if (!title) return jsonError("TASK_TITLE_REQUIRED", 400);
-
     const supabase = getSupabaseServerClient();
-    const isMeetingSource = body.source === "meeting" && Boolean(body.sourceId);
-    let meetingSourceDescription = "";
-    if (isMeetingSource) {
-      const { data: meeting, error: meetingError } = await supabase
-        .from("meeting_minutes")
-        .select("id,title")
-        .eq("id", body.sourceId)
-        .eq("user_email", userEmail)
-        .maybeSingle();
-      if (meetingError) throw meetingError;
-      if (!meeting) return jsonError("MEETING_NOT_FOUND", 404);
-
-      const duplicate = await findMeetingTaskDuplicate(supabase, userEmail, title, body.sourceId);
-      if (duplicate) return Response.json({ task: mapTaskRow(duplicate), duplicate: true });
-      meetingSourceDescription = `회의록에서 추출됨: ${meeting.title}\n${getMeetingTaskMarker(body.sourceId)}`;
-    }
-    const payload = {
-      user_email: userEmail,
-      title,
-      description: meetingSourceDescription || String(body.description || "").trim(),
-      completed: Boolean(body.completed),
-      priority: normalizePriority(body.priority),
-      steps: normalizeSteps(body.steps),
-      sort_order: normalizeSortOrder(body.sort_order),
-    };
-
-    let result = await supabase.from("tasks").insert(payload).select(TASK_COLUMNS).single();
-
-    if (result.error && isMissingColumnError(result.error)) {
-      result = await supabase.from("tasks").insert(toStepsPayload(payload)).select(STEPS_TASK_COLUMNS).single();
-    }
-
-    if (result.error && isMissingColumnError(result.error)) {
-      result = await supabase.from("tasks").insert(toLegacyPayload(payload)).select(MINIMAL_TASK_COLUMNS).single();
-    }
-
-    if (result.error) throw result.error;
-    return Response.json({ task: mapTaskRow(result.data), duplicate: false });
+    const created = await createTaskForUser({ supabase, userEmail, body });
+    return Response.json(created);
   } catch (error) {
     logSupabaseQueryError("Tasks POST failed", error);
-    return jsonError(getSupabaseErrorCode(error), 500);
+    return jsonError(error?.code || getSupabaseErrorCode(error), error?.status || 500);
   }
 }
 
