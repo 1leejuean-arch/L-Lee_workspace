@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { isAccessTokenFresh, refreshGoogleAccessToken } from "../../../../lib/googleAuth";
+import { isWorkspaceOwnerEmail } from "../../../../lib/workspaceOwner";
 
 const GOOGLE_AUTH_SCOPE = [
   "openid",
@@ -63,6 +64,7 @@ export const authOptions = {
       session.hasRefreshToken = Boolean(token.refreshToken);
       session.error = token.error;
       session.authError = token.authError || token.error;
+      if (session.user) session.user.isWorkspaceOwner = isWorkspaceOwnerEmail(session.user.email || token.email);
       return session;
     },
   },

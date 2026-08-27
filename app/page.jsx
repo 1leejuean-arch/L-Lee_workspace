@@ -25,6 +25,7 @@ import AssistantActionCard from "./components/AssistantActionCard";
 import DashboardRedesign from "./components/DashboardRedesign";
 import LLeeAIView from "./components/LLeeAIView";
 import MeetingMinutesView, { useMeetingMinutes } from "./components/MeetingMinutesView";
+import WorkspaceAuthGate from "./components/WorkspaceAuthGate";
 import {
   Bell,
   Bot,
@@ -3786,7 +3787,7 @@ function getTimeBasedGreeting(hour) {
   return "좋은 밤이에요";
 }
 
-export default function Home() {
+function WorkspaceApp() {
   const { data: session, status } = useSession();
   const assetManager = useAssetManager(status);
   const meetingManager = useMeetingMinutes(status);
@@ -5319,5 +5320,13 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <WorkspaceAuthGate>
+      <WorkspaceApp />
+    </WorkspaceAuthGate>
   );
 }
