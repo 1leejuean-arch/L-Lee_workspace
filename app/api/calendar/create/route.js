@@ -2,6 +2,9 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../../auth/[...nextauth]/route";
 import { fetchGoogleApi } from "../../../../lib/googleApiServer";
+import { getSupabaseServerClient } from "../../../../lib/supabaseServer";
+import { SUBSCRIPTION_COLUMNS, mapSubscription } from "../../../../lib/assets";
+import { createRecurringCalendarEvent } from "../../../../lib/recurringCalendar";
 
 function buildDateTime(date, time) {
   return `${date}T${time}:00`;
@@ -35,6 +38,53 @@ export async function POST(request) {
     }
 
     const body = await request.json().catch(() => ({}));
+
+    if (body.subscriptionId) {
+      const userEmail = session.user?.email;
+      if (!userEmail) return NextResponse.json({ error: "Google 계정 연결이 필요합니다." }, { status: 401 });
+      const supabase = getSupabaseServerClient();
+      const subscriptionResult = await supabase
+        .from("subscriptions")
+        .select(SUBSCRIPTION_COLUMNS)
+        .eq("id", body.subscriptionId)
+        .eq("user_email", userEmail)
+        .single();
+      if (subscriptionResult.error) {
+        return NextResponse.json({ error: "정기결제를 찾지 못했습니다." }, { status: 404 });
+      }
+
+      let subscription = mapSubscription(subscriptionResult.data);
+      try {
+        const calendar = await createRecurringCalendarEvent(request, session, subscription);
+        const updated = await supabase
+          .from("subscriptions")
+          .update({ calendar_event_id: calendar.eventId, updated_at: new Date().toISOString() })
+          .eq("id", subscription.id)
+          .eq("user_email", userEmail)
+          .select(SUBSCRIPTION_COLUMNS)
+          .single();
+        if (updated.error) throw updated.error;
+        subscription = mapSubscription(updated.data);
+        return NextResponse.json({
+          message: calendar.duplicate ? "이미 Google Calendar에 등록된 일정입니다." : "정기결제 일정이 Google Calendar에 추가되었습니다.",
+          event: calendar.event,
+          subscription,
+          duplicate: calendar.duplicate,
+        });
+      } catch (error) {
+        console.error("Recurring payment Google Calendar create failed", {
+          status: error?.status || null,
+          googleCode: error?.googleCode || null,
+          googleReason: error?.googleReason || null,
+          message: error?.message || "Unknown Google Calendar error",
+        });
+        return NextResponse.json(
+          { error: "RECURRING_CALENDAR_CREATE_FAILED", message: "정기결제는 등록했지만 캘린더 일정은 추가하지 못했습니다.", details: error?.message || "Google Calendar API error" },
+          { status: error?.status || 502 },
+        );
+      }
+    }
+
     const title = body.title?.trim();
     const date = body.date;
     const startTime = body.startTime;

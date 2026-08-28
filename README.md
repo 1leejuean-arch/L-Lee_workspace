@@ -25,6 +25,14 @@ npm run dev
 
 ## `.next` 캐시 오류 복구
 
+개발 서버가 꼬였을 때:
+
+```powershell
+npm run dev:reset
+```
+
+이 명령어는 현재 복구 명령을 실행하는 npm 프로세스를 제외한 Node 서버를 종료하고, `.next` 캐시를 지운 뒤 3002 포트로 개발 서버를 다시 실행합니다. 실행 중인 다른 Node 개발 서버도 종료될 수 있으므로 필요한 작업을 먼저 저장하세요.
+
 `webpack.js`, `layout.js`, `prerender-manifest.json` 관련 `UNKNOWN` 또는 `ENOENT` 오류가 발생하면 실행 중인 개발 서버를 먼저 `Ctrl+C`로 종료하고 다음 명령을 사용하세요.
 
 ```powershell
@@ -45,7 +53,9 @@ npm run build:clean
 
 - `npm run dev`: 3002 포트에서 개발 서버 실행
 - `npm run clean`: Windows PowerShell로 `.next` 캐시 삭제
+- `npm run kill:node`: 현재 npm 실행 프로세스를 제외한 Node 프로세스 강제 종료
 - `npm run dev:clean`: 캐시 삭제 후 개발 서버 실행
+- `npm run dev:reset`: Node 서버 종료, 캐시 삭제 후 개발 서버 실행
 - `npm run build`: 프로덕션 빌드 실행
 - `npm run build:clean`: 캐시 삭제 후 프로덕션 빌드 실행
 - `npm run start`: 프로덕션 서버를 3002 포트에서 실행

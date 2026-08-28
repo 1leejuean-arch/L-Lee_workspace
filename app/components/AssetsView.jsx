@@ -121,6 +121,8 @@ export function useAssetManager(authStatus) {
     deleteWorkSession: (id) => mutate("/api/assets/work-sessions", "DELETE", { id }),
     saveSubscription: (value, id) => mutate("/api/assets/subscriptions", id ? "PATCH" : "POST", id ? { id, ...value } : value),
     deleteSubscription: (id) => mutate("/api/assets/subscriptions", "DELETE", { id }),
+    processSubscription: (subscription) => mutate("/api/assets/subscriptions/process", "POST", { subscriptionId: subscription.id, paymentDate: subscription.nextBillingDate }),
+    syncSubscriptionCalendar: (subscription) => mutate("/api/calendar/create", "POST", { subscriptionId: subscription.id, allDay: true }),
   };
 }
 
@@ -249,8 +251,8 @@ function TransactionsTable({ transactions, saving, onEdit, onDelete }) {
   );
 }
 
-export default function AssetsView({ manager, authStatus }) {
-  const { data, status, error, saving, reload, saveInitialBalance, saveTransaction, deleteTransaction, saveCategory, saveWorkSession, deleteWorkSession, saveSubscription, deleteSubscription } = manager;
+export default function AssetsView({ manager, authStatus, onCalendarChanged }) {
+  const { data, status, error, saving, reload, saveInitialBalance, saveTransaction, deleteTransaction, saveCategory, saveWorkSession, deleteWorkSession, saveSubscription, deleteSubscription, processSubscription, syncSubscriptionCalendar } = manager;
   const [activeTab, setActiveTab] = useState("dashboard");
   const [initialBalance, setInitialBalance] = useState("");
   const [transactionDraft, setTransactionDraft] = useState(emptyTransaction);
@@ -298,6 +300,48 @@ export default function AssetsView({ manager, authStatus }) {
   async function safeAction(action, success) {
     setMessage("");
     try { await action(); setMessage(success); } catch {}
+  }
+
+  async function submitSubscription(event) {
+    event.preventDefault();
+    const edited = editingSubscriptionId;
+    setMessage("");
+    try {
+      const result = await saveSubscription(subscriptionDraft, edited);
+      setEditingSubscriptionId(null);
+      setSubscriptionDraft(emptySubscription());
+      if (edited) {
+        setMessage("정기결제를 수정했습니다.");
+        return;
+      }
+      try {
+        const calendarResult = await syncSubscriptionCalendar(result.subscription);
+        setMessage(calendarResult?.message || "정기결제를 등록하고 캘린더에 추가했습니다.");
+        await onCalendarChanged?.();
+      } catch (calendarError) {
+        setMessage(calendarError?.message || "정기결제는 등록했지만 캘린더 일정은 추가하지 못했습니다.");
+      }
+    } catch {}
+  }
+
+  async function confirmSubscriptionExpense(subscription) {
+    setMessage("");
+    try {
+      const result = await processSubscription(subscription);
+      setMessage(result?.calendarWarning || result?.message || "정기결제를 지출로 등록했습니다.");
+      if (result?.calendarSynced) await onCalendarChanged?.();
+    } catch {}
+  }
+
+  async function addSubscriptionToCalendar(subscription) {
+    setMessage("");
+    try {
+      const result = await syncSubscriptionCalendar(subscription);
+      setMessage(result?.message || "정기결제 일정을 캘린더에 추가했습니다.");
+      await onCalendarChanged?.();
+    } catch (calendarError) {
+      setMessage(calendarError?.message || "정기결제는 등록했지만 캘린더 일정은 추가하지 못했습니다.");
+    }
   }
 
   function editTransaction(item) {
@@ -388,7 +432,7 @@ export default function AssetsView({ manager, authStatus }) {
 
       {activeTab === "subscriptions" && (
         <div className="grid gap-5 xl:grid-cols-12">
-          <SectionCard className="xl:col-span-5"><div className="border-b border-white/10 p-5"><div className="flex items-center gap-3"><CreditCard className="h-5 w-5 text-cyan-300" /><h3 className="font-semibold text-slate-100">{editingSubscriptionId ? "정기결제 수정" : "정기결제 등록"}</h3></div></div><form onSubmit={(event) => { event.preventDefault(); const edited = editingSubscriptionId; safeAction(async () => { await saveSubscription(subscriptionDraft, edited); setEditingSubscriptionId(null); setSubscriptionDraft(emptySubscription()); }, edited ? "정기결제를 수정했습니다." : "정기결제를 등록했습니다."); }} className="grid gap-4 p-5 sm:grid-cols-2">
+          <SectionCard className="xl:col-span-5"><div className="border-b border-white/10 p-5"><div className="flex items-center gap-3"><CreditCard className="h-5 w-5 text-cyan-300" /><h3 className="font-semibold text-slate-100">{editingSubscriptionId ? "정기결제 수정" : "정기결제 등록"}</h3></div></div><form onSubmit={submitSubscription} className="grid gap-4 p-5 sm:grid-cols-2">
             <Field label="서비스명" className="sm:col-span-2"><input required value={subscriptionDraft.serviceName} onChange={(event) => setSubscriptionDraft((value) => ({ ...value, serviceName: event.target.value }))} className={inputClass} placeholder="예: Supabase" /></Field>
             <Field label="금액"><input required type="number" min="1" value={subscriptionDraft.amount} onChange={(event) => setSubscriptionDraft((value) => ({ ...value, amount: event.target.value }))} className={inputClass} /></Field>
             <Field label="결제 주기"><select value={subscriptionDraft.billingCycle} onChange={(event) => setSubscriptionDraft((value) => ({ ...value, billingCycle: event.target.value }))} className={inputClass}><option value="monthly">매월</option><option value="yearly">매년</option><option value="weekly">매주</option></select></Field>
@@ -397,7 +441,7 @@ export default function AssetsView({ manager, authStatus }) {
             <Field label="메모" className="sm:col-span-2"><input value={subscriptionDraft.memo} onChange={(event) => setSubscriptionDraft((value) => ({ ...value, memo: event.target.value }))} className={inputClass} /></Field>
             <div className="flex gap-2 sm:col-span-2"><button disabled={saving || status === "missing"} className={primaryButton}>{editingSubscriptionId ? "수정 저장" : "정기결제 등록"}</button>{editingSubscriptionId && <button type="button" onClick={() => { setEditingSubscriptionId(null); setSubscriptionDraft(emptySubscription()); }} className={secondaryButton}>취소</button>}</div>
           </form></SectionCard>
-          <div className="space-y-5 xl:col-span-7"><div className="grid gap-4 sm:grid-cols-2"><SectionCard className="p-5"><p className="text-xs text-slate-500">이번 달 예상 구독비</p><p className="mt-2 text-2xl font-semibold text-amber-200">{formatWon(expectedSubscriptionCost)}</p></SectionCard><SectionCard className="p-5"><p className="text-xs text-slate-500">활성 정기결제</p><p className="mt-2 text-2xl font-semibold text-cyan-200">{data.subscriptions.filter((item) => item.isActive).length}개</p></SectionCard></div><SectionCard><div className="border-b border-white/10 p-5"><h3 className="font-semibold text-slate-100">정기결제 목록</h3></div><div className="divide-y divide-white/10">{data.subscriptions.map((item) => <div key={item.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center"><CalendarClock className="h-5 w-5 shrink-0 text-cyan-300" /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="text-slate-100">{item.serviceName}</strong><span className="rounded-full bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{item.billingCycle === "monthly" ? "매월" : item.billingCycle === "yearly" ? "매년" : "매주"}</span><span className="text-xs text-slate-500">{item.category}</span></div><p className="mt-1 text-xs text-slate-500">다음 결제 {item.nextBillingDate}{item.memo ? " · " + item.memo : ""}</p></div><strong className="text-amber-200">{formatWon(item.amount)}</strong><button onClick={() => { setEditingSubscriptionId(item.id); setSubscriptionDraft({ serviceName: item.serviceName, amount: String(item.amount), billingCycle: item.billingCycle, nextBillingDate: item.nextBillingDate, category: item.category, memo: item.memo, isActive: item.isActive }); }} className={secondaryButton}><Pencil className="h-4 w-4" /></button><button onClick={() => { if (window.confirm("정기결제를 삭제할까요?")) safeAction(() => deleteSubscription(item.id), "정기결제를 삭제했습니다."); }} className={secondaryButton}><Trash2 className="h-4 w-4" /></button></div>)}{!data.subscriptions.length && <p className="p-5 text-sm text-slate-500">등록된 정기결제가 없습니다.</p>}</div></SectionCard></div>
+          <div className="space-y-5 xl:col-span-7"><div className="grid gap-4 sm:grid-cols-2"><SectionCard className="p-5"><p className="text-xs text-slate-500">이번 달 예상 구독비</p><p className="mt-2 text-2xl font-semibold text-amber-200">{formatWon(expectedSubscriptionCost)}</p></SectionCard><SectionCard className="p-5"><p className="text-xs text-slate-500">활성 정기결제</p><p className="mt-2 text-2xl font-semibold text-cyan-200">{data.subscriptions.filter((item) => item.isActive).length}개</p></SectionCard></div><SectionCard><div className="border-b border-white/10 p-5"><h3 className="font-semibold text-slate-100">정기결제 목록</h3></div><div className="divide-y divide-white/10">{data.subscriptions.map((item) => { const due = item.isActive && item.nextBillingDate <= todayValue() && item.lastProcessedDate !== item.nextBillingDate; return <div key={item.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center"><CalendarClock className={cx("h-5 w-5 shrink-0", due ? "text-amber-300" : "text-cyan-300")} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="text-slate-100">{item.serviceName}</strong><span className="rounded-full bg-white/[0.06] px-2 py-1 text-[11px] text-slate-400">{item.billingCycle === "monthly" ? "매월" : item.billingCycle === "yearly" ? "매년" : "매주"}</span><span className="text-xs text-slate-500">{item.category}</span>{due && <span className="rounded-full bg-amber-300/10 px-2 py-1 text-[11px] text-amber-200">결제 필요</span>}</div><p className="mt-1 text-xs text-slate-500">{due ? `결제 예정일 ${item.nextBillingDate}` : `다음 결제 ${item.nextBillingDate}`}{item.memo ? " · " + item.memo : ""}</p></div><strong className="text-amber-200">{formatWon(item.amount)}</strong>{due && <button disabled={saving} onClick={() => confirmSubscriptionExpense(item)} className={primaryButton}>지출로 등록</button>}{!item.calendarEventId && <button disabled={saving} onClick={() => addSubscriptionToCalendar(item)} className={secondaryButton}>캘린더에 추가</button>}<button onClick={() => { setEditingSubscriptionId(item.id); setSubscriptionDraft({ serviceName: item.serviceName, amount: String(item.amount), billingCycle: item.billingCycle, nextBillingDate: item.nextBillingDate, category: item.category, memo: item.memo, isActive: item.isActive }); }} className={secondaryButton}><Pencil className="h-4 w-4" /></button><button onClick={() => { if (window.confirm("정기결제를 삭제할까요?")) safeAction(() => deleteSubscription(item.id), "정기결제를 삭제했습니다."); }} className={secondaryButton}><Trash2 className="h-4 w-4" /></button></div>; })}{!data.subscriptions.length && <p className="p-5 text-sm text-slate-500">등록된 정기결제가 없습니다.</p>}</div></SectionCard></div>
         </div>
       )}
 

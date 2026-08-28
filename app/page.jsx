@@ -20,6 +20,7 @@ import {
 } from "../lib/workspaceStorage";
 import { isLikelyCreateRequest } from "../lib/assistantRequestIntent";
 import { mockWeather } from "../lib/weatherData";
+import { getKoreaDateValue, isSubscriptionDue } from "../lib/assets";
 import AssetsView, { formatWon, useAssetManager } from "./components/AssetsView";
 import AssistantActionCard from "./components/AssistantActionCard";
 import DashboardRedesign from "./components/DashboardRedesign";
@@ -84,6 +85,7 @@ const NOTES_KEY = "l-lee-workspace.notes";
 const CALENDAR_EVENTS_KEY = "l-lee-workspace.calendarEvents";
 const DRIVE_FILES_KEY = "l-lee-workspace.driveFiles";
 const THEME_KEY = "l-lee-workspace.theme";
+const DISMISSED_SUBSCRIPTION_NOTIFICATIONS_KEY = "l-lee-workspace.dismissedSubscriptionNotifications";
 const stableInitialDate = new Date(2026, 0, 1);
 const stableInitialDateLabel = "날짜를 불러오는 중";
 const stableGreetingText = "좋은 하루예요";
@@ -1831,21 +1833,36 @@ function SearchResultsPanel({ results, onSelect, expanded, onToggleExpanded }) {
   );
 }
 
-function NotificationPanel({ notifications, onSelect }) {
+function NotificationPanel({ notifications, onSelect, onProcessSubscription, onDismissSubscription, processingSubscriptionId, feedback, feedbackType }) {
   return (
-    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-80 overflow-hidden rounded-lg border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
-      <div className="border-b border-white/10 px-4 py-3">
+    <div className="absolute left-0 top-[calc(100%+0.75rem)] z-[150] flex max-h-[min(72vh,36rem)] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-slate-600/80 bg-[#070b14] shadow-2xl shadow-black/90 ring-1 ring-black/50 sm:left-auto sm:right-0 sm:w-96">
+      <div className="shrink-0 border-b border-slate-700/90 bg-[#090e19] px-4 py-3.5">
         <p className="text-sm font-semibold text-white">알림</p>
         <p className="mt-1 text-xs text-slate-500">워크스페이스 상태를 빠르게 확인합니다.</p>
       </div>
-      <div className="max-h-96 overflow-y-auto p-2">
-        {notifications.map((notification) => (
-          <button
-            key={notification.id}
-            type="button"
-            onClick={() => onSelect(notification)}
-            className="flex w-full gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-white/[0.07]"
-          >
+      <div className="workspace-scrollbar min-h-0 flex-1 overscroll-contain overflow-y-auto px-3 pb-6 pt-3">
+        {feedback && <p aria-live="polite" className={`mb-3 rounded-xl border px-3 py-2.5 text-xs font-medium leading-5 shadow-lg shadow-black/25 ${feedbackType === "error" ? "border-rose-500/70 bg-rose-950 text-rose-100" : "border-emerald-500/70 bg-emerald-950 text-emerald-50"}`}>{feedback}</p>}
+        {notifications.map((notification) => notification.subscription ? (
+          <article key={notification.id} className="mb-3 rounded-2xl border border-slate-700/90 bg-slate-900 p-4 shadow-xl shadow-black/40 last:mb-0">
+            <div className="flex items-start gap-3">
+              <span className="mt-1.5 flex h-3 w-3 shrink-0 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(252,211,77,0.55)]" />
+              <div className="min-w-0 flex-1">
+                <h3 className="break-words text-sm font-semibold leading-6 text-slate-50">{notification.title}</h3>
+                <p className="mt-2 break-words text-sm font-medium text-amber-100">{notification.message}</p>
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-xs">
+                  <dt className="text-slate-500">서비스명</dt><dd className="break-words text-right text-slate-200">{notification.subscription.serviceName}</dd>
+                  <dt className="text-slate-500">금액</dt><dd className="text-right font-semibold text-amber-200">{formatWon(notification.subscription.amount)}</dd>
+                  <dt className="text-slate-500">결제일</dt><dd className="text-right text-slate-300">{notification.subscription.nextBillingDate}</dd>
+                </dl>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" disabled={Boolean(processingSubscriptionId)} onClick={() => onProcessSubscription(notification.subscription)} className="min-h-10 rounded-xl bg-cyan-300 px-3 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{processingSubscriptionId === notification.subscription.id ? "처리 중..." : "지출로 등록"}</button>
+              <button type="button" disabled={Boolean(processingSubscriptionId)} onClick={() => onDismissSubscription(notification)} className="min-h-10 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50">나중에</button>
+            </div>
+          </article>
+        ) : (
+          <button key={notification.id} type="button" onClick={() => onSelect(notification)} className="flex w-full gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-white/[0.07]">
             <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.dot}`} />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-slate-100">{notification.title}</span>
@@ -3815,6 +3832,10 @@ function WorkspaceApp() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [dismissedSubscriptionNotifications, setDismissedSubscriptionNotifications] = useState([]);
+  const [processingSubscriptionId, setProcessingSubscriptionId] = useState(null);
+  const [notificationFeedback, setNotificationFeedback] = useState("");
+  const [notificationFeedbackType, setNotificationFeedbackType] = useState("success");
   const [themeMode, setThemeMode] = useState("dark-glass");
   const [storageReady, setStorageReady] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState({ today: [], week: [], month: [], lookup: [] });
@@ -3838,6 +3859,16 @@ function WorkspaceApp() {
   const [todayLabel, setTodayLabel] = useState(stableInitialDateLabel);
   const [currentHour, setCurrentHour] = useState(null);
   const userEmail = session?.user?.email || null;
+
+  useEffect(() => {
+    if (!clientReady) return;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(DISMISSED_SUBSCRIPTION_NOTIFICATIONS_KEY) || "[]");
+      setDismissedSubscriptionNotifications(Array.isArray(stored) ? stored.slice(-100) : []);
+    } catch {
+      setDismissedSubscriptionNotifications([]);
+    }
+  }, [clientReady]);
 
   useEffect(() => {
     const updateBrowserTime = (syncVisibleMonth = false) => {
@@ -4282,8 +4313,21 @@ function WorkspaceApp() {
     const remainingTasks = tasks.filter((task) => !task.completed).length;
     const todayEvents = calendarEvents.today.length;
     const recentFiles = driveFilesData.length;
+    const today = getKoreaDateValue(todayDate);
+    const recurringNotifications = assetManager.data.subscriptions
+      .filter((subscription) => isSubscriptionDue(subscription, today))
+      .filter((subscription) => !dismissedSubscriptionNotifications.includes(`${subscription.id}:${subscription.nextBillingDate}`))
+      .map((subscription) => ({
+        id: `subscription-${subscription.id}-${subscription.nextBillingDate}`,
+        title: subscription.nextBillingDate === today ? `오늘 ${subscription.serviceName} 결제일입니다.` : `${subscription.serviceName} 결제 확인이 필요합니다.`,
+        message: `${formatWon(subscription.amount)}을 지출로 등록할까요?`,
+        dot: "bg-amber-300",
+        view: "Assets",
+        subscription,
+      }));
 
     return [
+      ...recurringNotifications,
       {
         id: "calendar",
         title: todayEvents > 0 ? `오늘 일정 ${todayEvents}개` : "오늘 예정된 일정 없음",
@@ -4323,7 +4367,12 @@ function WorkspaceApp() {
         view: "Quick Launch",
       },
     ];
-  }, [calendarEvents.today.length, calendarStatus, driveFilesData.length, driveStatus, status, tasks]);
+  }, [assetManager.data.subscriptions, calendarEvents.today.length, calendarStatus, dismissedSubscriptionNotifications, driveFilesData.length, driveStatus, status, tasks, todayDate]);
+
+  const dueSubscriptionCount = useMemo(() => {
+    const today = getKoreaDateValue(todayDate);
+    return assetManager.data.subscriptions.filter((subscription) => isSubscriptionDue(subscription, today) && !dismissedSubscriptionNotifications.includes(`${subscription.id}:${subscription.nextBillingDate}`)).length;
+  }, [assetManager.data.subscriptions, dismissedSubscriptionNotifications, todayDate]);
 
   function openSearchResult(result) {
     if (result.href) window.open(result.href, "_blank", "noopener,noreferrer");
@@ -4336,6 +4385,33 @@ function WorkspaceApp() {
   function openNotification(notification) {
     setActiveView(notification.view);
     setNotificationsOpen(false);
+  }
+
+  async function processSubscriptionNotification(subscription) {
+    if (processingSubscriptionId) return;
+    setProcessingSubscriptionId(subscription.id);
+    setNotificationFeedback("");
+    try {
+      const result = await assetManager.processSubscription(subscription);
+      setNotificationFeedbackType("success");
+      setNotificationFeedback(result?.duplicate ? `${subscription.serviceName} 지출은 이미 등록되어 있습니다.` : `${subscription.serviceName} 지출을 등록했습니다.`);
+      if (result?.calendarSynced) await loadCalendarEvents();
+    } catch (error) {
+      console.error("Subscription notification expense failed", { message: error?.message || "Unknown error", code: error?.code || null });
+      setNotificationFeedbackType("error");
+      setNotificationFeedback("지출 등록에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setProcessingSubscriptionId(null);
+    }
+  }
+
+  function dismissSubscriptionNotification(notification) {
+    const subscription = notification.subscription;
+    setDismissedSubscriptionNotifications((items) => {
+      const nextItems = [...new Set([...items, `${subscription.id}:${subscription.nextBillingDate}`])].slice(-100);
+      window.localStorage.setItem(DISMISSED_SUBSCRIPTION_NOTIFICATIONS_KEY, JSON.stringify(nextItems));
+      return nextItems;
+    });
   }
 
   async function refreshWorkspaceFromSupabase() {
@@ -5011,7 +5087,7 @@ function WorkspaceApp() {
       />
     ),
     Weather: <WeatherView weather={weatherData} weatherStatus={weatherStatus} weatherError={weatherError} />,
-    Assets: <AssetsView manager={assetManager} authStatus={status} />,
+    Assets: <AssetsView manager={assetManager} authStatus={status} onCalendarChanged={() => loadCalendarEvents()} />,
     "L-Lee AI": <LLeeAIView onActionConfirmed={handleAssistantActionConfirmed} />,
     Meetings: <MeetingMinutesView manager={meetingManager} authStatus={status} onTasksAdded={refreshWorkspaceFromSupabase} />,
     Drive: (
@@ -5137,7 +5213,7 @@ function WorkspaceApp() {
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-20 flex-col gap-4 border-b border-white/10 bg-slate-950/30 px-4 py-4 backdrop-blur-xl md:px-8 xl:flex-row xl:items-center xl:justify-between">
+          <header className="relative z-[45] flex min-h-20 flex-col gap-4 border-b border-white/10 bg-slate-950/30 px-4 py-4 backdrop-blur-xl md:px-8 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-center gap-4">
               <button type="button" aria-label="메뉴 열기" className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-slate-300 lg:hidden">
                 <Menu className="h-5 w-5" />
@@ -5205,9 +5281,9 @@ function WorkspaceApp() {
                     className="relative rounded-lg border border-white/10 bg-white/[0.045] p-3 text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
                   >
                     <Bell className="h-4 w-4" />
-                    <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-cyan-300" />
+                    {dueSubscriptionCount > 0 ? <span className="absolute -right-2 -top-2 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-slate-950">{dueSubscriptionCount}</span> : <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-cyan-300" />}
                   </button>
-                  {notificationsOpen && <NotificationPanel notifications={notifications} onSelect={openNotification} />}
+                  {notificationsOpen && <NotificationPanel notifications={notifications} onSelect={openNotification} onProcessSubscription={processSubscriptionNotification} onDismissSubscription={dismissSubscriptionNotification} processingSubscriptionId={processingSubscriptionId} feedback={notificationFeedback} feedbackType={notificationFeedbackType} />}
                 </div>
                 {status === "authenticated" ? (
                   <button
